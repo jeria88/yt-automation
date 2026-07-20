@@ -1,0 +1,6 @@
+venv/
+__pycache__/
+*.pyc
+.env
+ytauto.db
+.pytest_cache/
