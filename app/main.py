@@ -11,10 +11,20 @@ init_db()
 
 app = FastAPI(title="yt-automation", version="0.1.0")
 
-cors_origin = os.getenv("CORS_ORIGIN", "*")
-# Acepta el frontend de InfinityFree y el de Coolify (sslip.io). Si CORS_ORIGIN
-# trae varios orígenes separados por coma, los expandimos.
-origins = [o.strip() for o in cors_origin.split(",") if o.strip()]
+# CORS: acepta los frontends conocidos (InfinityFree y Coolify sslip.io).
+# Se lee CORS_ORIGIN si existe, pero siempre se suma el origen de Coolify por defecto.
+cors_env = os.getenv("CORS_ORIGIN", "")
+origins = [o.strip() for o in cors_env.split(",") if o.strip()]
+defaults = [
+    "https://yt-automation.freedev.app",
+    "https://yt-automation.146.181.39.4.sslip.io",
+    "https://yt-frontend.146.181.39.4.sslip.io",
+]
+for d in defaults:
+    if d not in origins:
+        origins.append(d)
+if not origins:
+    origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
