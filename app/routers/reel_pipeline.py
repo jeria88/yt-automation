@@ -1,10 +1,11 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from app.db import SessionLocal, ReelPipeline
 from app.auth import get_current_token
 from app.backlog import fill_backlog
+from app.pipeline_jobs import process_audio
 
 router = APIRouter(prefix="/api/reel-pipeline", dependencies=[Depends(get_current_token)])
 
@@ -84,6 +85,21 @@ def update_status(pipeline_id: int, payload: ReelPipelinePatch):
 def trigger_fill_backlog():
     created = fill_backlog()
     return {"created": created}
+
+
+@router.post("/{pipeline_id}/retry-storyboard")
+def retry_storyboard(pipeline_id: int, background_tasks: BackgroundTasks):
+    with SessionLocal() as s:
+        r = s.get(ReelPipeline, pipeline_id)
+        if not r:
+            raise HTTPException(404, "reel_pipeline no encontrado")
+        if not r.audio_file_path:
+            raise HTTPException(409, "este guion todavia no tiene audio")
+        r.status = "audio_received"
+        r.last_error = None
+        s.commit()
+    background_tasks.add_task(process_audio, pipeline_id)
+    return {"status": "retrying"}
 
 
 def _serialize(r: ReelPipeline):
