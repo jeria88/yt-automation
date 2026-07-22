@@ -1,5 +1,8 @@
+import os
+from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from app.db import SessionLocal, ReelPipeline
@@ -8,6 +11,9 @@ from app.backlog import fill_backlog
 from app.pipeline_jobs import process_audio
 
 router = APIRouter(prefix="/api/reel-pipeline", dependencies=[Depends(get_current_token)])
+
+RENDER_DIR = Path(os.getenv("RENDER_DIR", "./renders"))
+RENDER_DIR.mkdir(parents=True, exist_ok=True)
 
 STATUSES = [
     "topic_pending", "script_pending", "script_sent", "awaiting_audio", "audio_received",
@@ -100,6 +106,35 @@ def retry_storyboard(pipeline_id: int, background_tasks: BackgroundTasks):
         s.commit()
     background_tasks.add_task(process_audio, pipeline_id)
     return {"status": "retrying"}
+
+
+@router.get("/{pipeline_id}/audio")
+def get_audio(pipeline_id: int):
+    with SessionLocal() as s:
+        r = s.get(ReelPipeline, pipeline_id)
+        if not r or not r.audio_file_path or not os.path.exists(r.audio_file_path):
+            raise HTTPException(404, "audio no encontrado")
+        path = r.audio_file_path
+    return FileResponse(path, media_type="audio/ogg")
+
+
+@router.post("/{pipeline_id}/render-complete")
+async def render_complete(pipeline_id: int, file: UploadFile):
+    with SessionLocal() as s:
+        r = s.get(ReelPipeline, pipeline_id)
+        if not r:
+            raise HTTPException(404, "reel_pipeline no encontrado")
+
+    dst = RENDER_DIR / f"{pipeline_id}.mp4"
+    with open(dst, "wb") as f:
+        f.write(await file.read())
+
+    with SessionLocal() as s:
+        r = s.get(ReelPipeline, pipeline_id)
+        r.rendered_video_path = str(dst)
+        r.status = "render_ready"
+        s.commit()
+    return {"status": "render_ready"}
 
 
 def _serialize(r: ReelPipeline):

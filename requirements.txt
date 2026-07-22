@@ -8,3 +8,7 @@ praw==7.7.1
 requests==2.32.3
 pytest==8.3.2
 faster-whisper==1.0.3
+rembg[cpu]==2.0.59
+ddgs==9.0.0
+pillow==10.4.0
+python-multipart==0.0.9

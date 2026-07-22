@@ -231,3 +231,56 @@ def test_process_audio_marks_error_on_failure(monkeypatch):
         row = s.get(ReelPipeline, pipeline_id)
         assert row.status == "error"
         assert "whisper reventó" in row.last_error
+
+
+def test_audio_endpoint_serves_file(tmp_path):
+    audio_file = tmp_path / "test.ogg"
+    audio_file.write_bytes(b"fake-audio-bytes")
+
+    with SessionLocal() as s:
+        row = ReelPipeline(status="audio_received", audio_file_path=str(audio_file))
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        pipeline_id = row.id
+
+    c = TestClient(app)
+    r = c.get(f"/api/reel-pipeline/{pipeline_id}/audio", headers=H)
+    assert r.status_code == 200
+    assert r.content == b"fake-audio-bytes"
+
+
+def test_audio_endpoint_404_when_missing():
+    with SessionLocal() as s:
+        row = ReelPipeline(status="topic_pending")
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        pipeline_id = row.id
+
+    c = TestClient(app)
+    r = c.get(f"/api/reel-pipeline/{pipeline_id}/audio", headers=H)
+    assert r.status_code == 404
+
+
+def test_render_complete_saves_file_and_updates_status():
+    with SessionLocal() as s:
+        row = ReelPipeline(status="rendering")
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        pipeline_id = row.id
+
+    c = TestClient(app)
+    r = c.post(
+        f"/api/reel-pipeline/{pipeline_id}/render-complete",
+        headers=H,
+        files={"file": ("out.mp4", b"fake-mp4-bytes", "video/mp4")},
+    )
+    assert r.status_code == 200, r.text
+
+    with SessionLocal() as s:
+        row = s.get(ReelPipeline, pipeline_id)
+        assert row.status == "render_ready"
+        assert row.rendered_video_path is not None
+        assert os.path.exists(row.rendered_video_path)
