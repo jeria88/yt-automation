@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, Request
@@ -38,27 +39,64 @@ def _handle_message(msg: dict) -> None:
     chat_id = str(msg["chat"]["id"])
 
     if "voice" in msg:
-        _handle_voice(chat_id, msg["voice"])
+        _handle_voice(chat_id, msg["voice"], msg)
     elif "audio" in msg:
-        _handle_voice(chat_id, msg["audio"])
+        _handle_voice(chat_id, msg["audio"], msg)
     elif "document" in msg and (msg["document"].get("mime_type") or "").startswith("audio/"):
-        _handle_voice(chat_id, msg["document"])
+        _handle_voice(chat_id, msg["document"], msg)
     elif msg.get("text") == "/start":
         send_message(chat_id, "Hola! Soy el bot de ReyPirataChaman. Te voy a mandar guiones propuestos para que grabes tu voz.")
     elif msg.get("text") == "/nuevo":
         fill_backlog()
 
 
-def _handle_voice(chat_id: str, voice: dict) -> None:
+def _extract_pipeline_id(msg: dict) -> int | None:
+    """Prioridad: 1) responder nativo a un mensaje de guion, 2) numero en el
+    texto/caption ("3", "#3", "guion 3"). Si ninguno matchea, None (fallback
+    al pendiente mas reciente)."""
+    reply = msg.get("reply_to_message")
+    if reply and "message_id" in reply:
+        with SessionLocal() as s:
+            r = s.scalar(
+                select(ReelPipeline).where(
+                    ReelPipeline.telegram_script_message_id == str(reply["message_id"])
+                )
+            )
+            if r:
+                return r.id
+
+    caption = msg.get("caption") or msg.get("text") or ""
+    m = re.search(r"\d+", caption)
+    if m:
+        return int(m.group())
+
+    return None
+
+
+def _handle_voice(chat_id: str, voice: dict, msg: dict) -> None:
+    explicit_id = _extract_pipeline_id(msg)
+
     with SessionLocal() as s:
-        r = s.scalar(
-            select(ReelPipeline)
-            .where(ReelPipeline.telegram_chat_id == chat_id, ReelPipeline.status == "awaiting_audio")
-            .order_by(ReelPipeline.updated_at.desc())
-        )
-        if not r:
-            send_message(chat_id, "No tengo ningún guion esperando audio ahora mismo.")
-            return
+        if explicit_id is not None:
+            r = s.scalar(
+                select(ReelPipeline).where(
+                    ReelPipeline.id == explicit_id,
+                    ReelPipeline.telegram_chat_id == chat_id,
+                    ReelPipeline.status == "awaiting_audio",
+                )
+            )
+            if not r:
+                send_message(chat_id, f"No tengo el guion #{explicit_id} esperando audio (¿ya lo mandaste, o no existe?).")
+                return
+        else:
+            r = s.scalar(
+                select(ReelPipeline)
+                .where(ReelPipeline.telegram_chat_id == chat_id, ReelPipeline.status == "awaiting_audio")
+                .order_by(ReelPipeline.updated_at.desc())
+            )
+            if not r:
+                send_message(chat_id, "No tengo ningún guion esperando audio ahora mismo.")
+                return
         pipeline_id = r.id
 
     audio_path = AUDIO_DIR / f"{pipeline_id}.ogg"

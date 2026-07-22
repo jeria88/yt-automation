@@ -47,8 +47,10 @@ def _create_and_send_one() -> int:
     msg = send_message(
         chat_id,
         f"📝 Guion propuesto #{pipeline_id} (tema: {topic['keyword']})\n\n{script}\n\n"
-        f"Grabá tu voz leyendo este guion (con los ajustes que quieras) y respondé "
-        f"con el audio acá mismo.",
+        f"Grabá tu voz leyendo este guion (con los ajustes que quieras) y mandame el audio.\n"
+        f"Si hay más de un guion pendiente, escribí \"{pipeline_id}\" como texto/descripción "
+        f"del audio para que sepa cuál es (si lo compartís desde WhatsApp, ponelo en el campo "
+        f"de descripción antes de enviar). Si solo hay uno pendiente, no hace falta.",
         buttons=[[("🔄 Nuevo guion", f"regen:{pipeline_id}")]],
     )
 
@@ -82,6 +84,7 @@ def regenerate_script(pipeline_id: int) -> None:
     send_message(
         chat_id,
         f"📝 Guion regenerado #{pipeline_id} (tema: {topic['keyword']})\n\n{script}\n\n"
-        f"Grabá tu voz y respondé con el audio acá.",
+        f"Grabá tu voz y mandame el audio. Si hay más de un guion pendiente, escribí "
+        f"\"{pipeline_id}\" como texto/descripción del audio.",
         buttons=[[("🔄 Nuevo guion", f"regen:{pipeline_id}")]],
     )

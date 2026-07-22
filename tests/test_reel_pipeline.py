@@ -110,3 +110,65 @@ def test_webhook_voice_updates_status(monkeypatch):
         assert row.status == "audio_received"
         assert row.audio_file_path is not None
         assert row.audio_duration_seconds == 30
+
+
+def _mock_voice_download(monkeypatch):
+    import httpx
+
+    def fake_get_with_file(url, **kwargs):
+        if "getFile" in url:
+            return _FakeResp({"result": {"file_path": "voice/x.oga"}})
+        return _FakeResp({"items": []})
+
+    def fake_stream(method, url, **kwargs):
+        class _S:
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *a):
+                return False
+
+            def raise_for_status(self_inner):
+                pass
+
+            def iter_bytes(self_inner):
+                return iter([b"fake-audio-bytes"])
+
+        return _S()
+
+    monkeypatch.setattr(httpx, "get", fake_get_with_file)
+    monkeypatch.setattr(httpx, "stream", fake_stream)
+
+
+def test_webhook_voice_with_caption_picks_explicit_pipeline_not_most_recent(monkeypatch):
+    _patch_externals(monkeypatch)
+    _mock_voice_download(monkeypatch)
+
+    with SessionLocal() as s:
+        older = ReelPipeline(status="awaiting_audio", telegram_chat_id="777")
+        s.add(older)
+        s.commit()
+        s.refresh(older)
+        older_id = older.id
+
+        newer = ReelPipeline(status="awaiting_audio", telegram_chat_id="777")
+        s.add(newer)
+        s.commit()
+        s.refresh(newer)
+        newer_id = newer.id
+
+    c = TestClient(app)
+    # manda el audio con el numero del guion VIEJO como caption -> debe actualizar
+    # el viejo, no el mas reciente (que seria el default sin caption)
+    r = c.post("/telegram/webhook", json={
+        "message": {
+            "chat": {"id": 777},
+            "audio": {"file_id": "abc", "duration": 20},
+            "caption": f"guion {older_id}",
+        }
+    })
+    assert r.status_code == 200
+
+    with SessionLocal() as s:
+        assert s.get(ReelPipeline, older_id).status == "audio_received"
+        assert s.get(ReelPipeline, newer_id).status == "awaiting_audio"
