@@ -2,11 +2,12 @@ import os
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, BackgroundTasks, Request
 from sqlalchemy import select
 
 from app.backlog import fill_backlog, regenerate_script
 from app.db import SessionLocal, ReelPipeline
+from app.pipeline_jobs import process_audio
 from app.telegram_bot import answer_callback_query, download_voice, send_message
 
 router = APIRouter(prefix="/telegram")
@@ -16,13 +17,13 @@ AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/webhook")
-async def webhook(request: Request):
+async def webhook(request: Request, background_tasks: BackgroundTasks):
     update = await request.json()
 
     if "callback_query" in update:
         _handle_callback(update["callback_query"])
     elif "message" in update:
-        _handle_message(update["message"])
+        _handle_message(update["message"], background_tasks)
 
     return {"ok": True}
 
@@ -33,17 +34,32 @@ def _handle_callback(cbq: dict) -> None:
     if data.startswith("regen:"):
         pipeline_id = int(data.split(":", 1)[1])
         regenerate_script(pipeline_id)
+    elif data.startswith("cut:"):
+        pipeline_id = int(data.split(":", 1)[1])
+        _cut_pipeline(pipeline_id)
 
 
-def _handle_message(msg: dict) -> None:
+def _cut_pipeline(pipeline_id: int) -> None:
+    with SessionLocal() as s:
+        r = s.get(ReelPipeline, pipeline_id)
+        if not r or r.status in ("published", "publishing", "rendering"):
+            return
+        chat_id = r.telegram_chat_id
+        r.status = "error"
+        r.last_error = "cortado por Franco (gate 1)"
+        s.commit()
+    send_message(chat_id, f"✂️ Guion #{pipeline_id} cortado, no sigue al render.")
+
+
+def _handle_message(msg: dict, background_tasks: BackgroundTasks) -> None:
     chat_id = str(msg["chat"]["id"])
 
     if "voice" in msg:
-        _handle_voice(chat_id, msg["voice"], msg)
+        _handle_voice(chat_id, msg["voice"], msg, background_tasks)
     elif "audio" in msg:
-        _handle_voice(chat_id, msg["audio"], msg)
+        _handle_voice(chat_id, msg["audio"], msg, background_tasks)
     elif "document" in msg and (msg["document"].get("mime_type") or "").startswith("audio/"):
-        _handle_voice(chat_id, msg["document"], msg)
+        _handle_voice(chat_id, msg["document"], msg, background_tasks)
     elif msg.get("text") == "/start":
         send_message(chat_id, "Hola! Soy el bot de ReyPirataChaman. Te voy a mandar guiones propuestos para que grabes tu voz.")
     elif msg.get("text") == "/nuevo":
@@ -73,7 +89,7 @@ def _extract_pipeline_id(msg: dict) -> int | None:
     return None
 
 
-def _handle_voice(chat_id: str, voice: dict, msg: dict) -> None:
+def _handle_voice(chat_id: str, voice: dict, msg: dict, background_tasks: BackgroundTasks) -> None:
     explicit_id = _extract_pipeline_id(msg)
 
     with SessionLocal() as s:
@@ -111,3 +127,4 @@ def _handle_voice(chat_id: str, voice: dict, msg: dict) -> None:
         s.commit()
 
     send_message(chat_id, f"🎙️ Audio recibido para el guion #{pipeline_id}. Armando el storyboard...")
+    background_tasks.add_task(process_audio, pipeline_id)

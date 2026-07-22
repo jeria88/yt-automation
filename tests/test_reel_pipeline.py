@@ -99,6 +99,9 @@ def test_webhook_voice_updates_status(monkeypatch):
 
     monkeypatch.setattr(httpx, "stream", fake_stream)
 
+    import app.routers.telegram_webhook as webhook_module
+    monkeypatch.setattr(webhook_module, "process_audio", lambda pipeline_id: None)
+
     c = TestClient(app)
     r = c.post("/telegram/webhook", json={
         "message": {"chat": {"id": 999}, "voice": {"file_id": "abc", "duration": 30}}
@@ -139,6 +142,9 @@ def _mock_voice_download(monkeypatch):
     monkeypatch.setattr(httpx, "get", fake_get_with_file)
     monkeypatch.setattr(httpx, "stream", fake_stream)
 
+    import app.routers.telegram_webhook as webhook_module
+    monkeypatch.setattr(webhook_module, "process_audio", lambda pipeline_id: None)
+
 
 def test_webhook_voice_with_caption_picks_explicit_pipeline_not_most_recent(monkeypatch):
     _patch_externals(monkeypatch)
@@ -172,3 +178,56 @@ def test_webhook_voice_with_caption_picks_explicit_pipeline_not_most_recent(monk
     with SessionLocal() as s:
         assert s.get(ReelPipeline, older_id).status == "audio_received"
         assert s.get(ReelPipeline, newer_id).status == "awaiting_audio"
+
+
+def test_process_audio_builds_storyboard_and_notifies(monkeypatch):
+    import app.pipeline_jobs as pipeline_jobs
+
+    sent = []
+    monkeypatch.setattr(pipeline_jobs, "send_message", lambda chat_id, text, **kw: sent.append((chat_id, text)))
+    monkeypatch.setattr(pipeline_jobs, "build_storyboard", lambda script, audio_path: {
+        "segments": [{"index": 0, "start": 0.0, "end": 5.0, "vehiculo": "Carl Jung", "transition_in": "cut"}],
+        "audio_duration_seconds": 5.0,
+    })
+
+    with SessionLocal() as s:
+        row = ReelPipeline(status="audio_received", telegram_chat_id="555", script_text="x", audio_file_path="x.ogg")
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        pipeline_id = row.id
+
+    pipeline_jobs.process_audio(pipeline_id)
+
+    with SessionLocal() as s:
+        row = s.get(ReelPipeline, pipeline_id)
+        assert row.status == "storyboard_ready"
+        assert "Carl Jung" in row.storyboard_json
+
+    assert len(sent) == 1
+    assert "Carl Jung" in sent[0][1]
+
+
+def test_process_audio_marks_error_on_failure(monkeypatch):
+    import app.pipeline_jobs as pipeline_jobs
+
+    monkeypatch.setattr(pipeline_jobs, "send_message", lambda *a, **kw: None)
+
+    def boom(script, audio_path):
+        raise RuntimeError("whisper reventó")
+
+    monkeypatch.setattr(pipeline_jobs, "build_storyboard", boom)
+
+    with SessionLocal() as s:
+        row = ReelPipeline(status="audio_received", telegram_chat_id="555", script_text="x", audio_file_path="x.ogg")
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        pipeline_id = row.id
+
+    pipeline_jobs.process_audio(pipeline_id)
+
+    with SessionLocal() as s:
+        row = s.get(ReelPipeline, pipeline_id)
+        assert row.status == "error"
+        assert "whisper reventó" in row.last_error
