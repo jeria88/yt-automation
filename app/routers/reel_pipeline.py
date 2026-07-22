@@ -108,6 +108,18 @@ def retry_storyboard(pipeline_id: int, background_tasks: BackgroundTasks):
     return {"status": "retrying"}
 
 
+@router.post("/{pipeline_id}/publish")
+def trigger_publish(pipeline_id: int, background_tasks: BackgroundTasks):
+    with SessionLocal() as s:
+        r = s.get(ReelPipeline, pipeline_id)
+        if not r:
+            raise HTTPException(404, "reel_pipeline no encontrado")
+        if r.status != "render_ready":
+            raise HTTPException(409, f"status es '{r.status}', no 'render_ready'")
+    background_tasks.add_task(publish_pipeline, pipeline_id)
+    return {"status": "publishing"}
+
+
 @router.get("/{pipeline_id}/audio")
 def get_audio(pipeline_id: int):
     with SessionLocal() as s:
