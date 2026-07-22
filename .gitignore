@@ -4,3 +4,4 @@ __pycache__/
 .env
 ytauto.db
 .pytest_cache/
+audio/

@@ -4,6 +4,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from app.db import SessionLocal, ReelPipeline
 from app.auth import get_current_token
+from app.backlog import fill_backlog
 
 router = APIRouter(prefix="/api/reel-pipeline", dependencies=[Depends(get_current_token)])
 
@@ -77,6 +78,12 @@ def update_status(pipeline_id: int, payload: ReelPipelinePatch):
         s.commit()
         s.refresh(r)
         return _serialize(r)
+
+
+@router.post("/fill-backlog")
+def trigger_fill_backlog():
+    created = fill_backlog()
+    return {"created": created}
 
 
 def _serialize(r: ReelPipeline):
