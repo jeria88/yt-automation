@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.db import init_db
-from app.routers import videos, hooks, scripts, calendar, stats
+from app.routers import videos, hooks, scripts, calendar, stats, reel_pipeline
 
 load_dotenv()
 
@@ -38,6 +38,7 @@ app.include_router(hooks.router)
 app.include_router(scripts.router)
 app.include_router(calendar.router)
 app.include_router(stats.router)
+app.include_router(reel_pipeline.router)
 
 
 @app.get("/")

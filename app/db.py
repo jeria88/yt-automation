@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Enum
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, ForeignKey, Enum
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 import datetime
 
@@ -52,6 +52,63 @@ class Post(Base):
     platform = Column(String(32), default="youtube")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     video = relationship("Video", back_populates="posts")
+
+
+class ReelPipeline(Base):
+    __tablename__ = "reel_pipeline"
+    id = Column(Integer, primary_key=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=True)
+
+    status = Column(String(32), nullable=False, default="topic_pending")
+    # topic_pending -> script_pending -> script_sent -> awaiting_audio -> audio_received ->
+    # storyboard_pending -> storyboard_ready -> rendering -> render_ready ->
+    # publishing -> published -> monitoring -> regenerating_hook -> republishing -> error
+
+    topic_source = Column(String(64))
+    script_text = Column(Text)
+    hook_variant = Column(Integer, default=1)
+
+    telegram_chat_id = Column(String(32))
+    telegram_script_message_id = Column(String(32))
+    telegram_audio_message_id = Column(String(32))
+    telegram_gate1_message_id = Column(String(32))
+
+    audio_file_path = Column(String(255))
+    audio_duration_seconds = Column(Integer)
+
+    storyboard_json = Column(Text)
+
+    rendered_video_path = Column(String(500))
+    youtube_video_id = Column(String(32))
+    youtube_url = Column(String(255))
+    youtube_privacy_status = Column(String(16), default="public")
+
+    last_error = Column(Text)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class YoutubeCredential(Base):
+    __tablename__ = "youtube_credential"
+    id = Column(Integer, primary_key=True)
+    channel_id = Column(String(64))
+    channel_title = Column(String(255))
+    access_token = Column(Text)
+    refresh_token = Column(Text)
+    expires_at = Column(DateTime)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class VideoMetrics(Base):
+    __tablename__ = "video_metrics"
+    id = Column(Integer, primary_key=True)
+    reel_pipeline_id = Column(Integer, ForeignKey("reel_pipeline.id"))
+    captured_at = Column(DateTime, default=datetime.datetime.utcnow)
+    views = Column(Integer)
+    impressions = Column(Integer)
+    ctr = Column(Float)
+    avg_view_duration_seconds = Column(Float)
+    likes = Column(Integer)
 
 
 def init_db():
