@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.db import SessionLocal, ReelPipeline
 from app.auth import get_current_token
 from app.backlog import fill_backlog
-from app.pipeline_jobs import process_audio
+from app.pipeline_jobs import process_audio, publish_pipeline
 
 router = APIRouter(prefix="/api/reel-pipeline", dependencies=[Depends(get_current_token)])
 
@@ -119,7 +119,8 @@ def get_audio(pipeline_id: int):
 
 
 @router.post("/{pipeline_id}/render-complete")
-async def render_complete(pipeline_id: int, file: UploadFile):
+async def render_complete(pipeline_id: int, background_tasks: BackgroundTasks,
+                           file: UploadFile, thumbnail: Optional[UploadFile] = None):
     with SessionLocal() as s:
         r = s.get(ReelPipeline, pipeline_id)
         if not r:
@@ -129,11 +130,21 @@ async def render_complete(pipeline_id: int, file: UploadFile):
     with open(dst, "wb") as f:
         f.write(await file.read())
 
+    thumb_dst = None
+    if thumbnail is not None:
+        thumb_dst = RENDER_DIR / f"{pipeline_id}_thumb.jpg"
+        with open(thumb_dst, "wb") as f:
+            f.write(await thumbnail.read())
+
     with SessionLocal() as s:
         r = s.get(ReelPipeline, pipeline_id)
         r.rendered_video_path = str(dst)
+        if thumb_dst:
+            r.thumbnail_path = str(thumb_dst)
         r.status = "render_ready"
         s.commit()
+
+    background_tasks.add_task(publish_pipeline, pipeline_id)
     return {"status": "render_ready"}
 
 
@@ -148,6 +159,9 @@ def _serialize(r: ReelPipeline):
         "audio_file_path": r.audio_file_path,
         "audio_duration_seconds": r.audio_duration_seconds,
         "storyboard_json": r.storyboard_json,
+        "title": r.title,
+        "description": r.description,
+        "thumbnail_path": r.thumbnail_path,
         "rendered_video_path": r.rendered_video_path,
         "youtube_video_id": r.youtube_video_id,
         "youtube_url": r.youtube_url,

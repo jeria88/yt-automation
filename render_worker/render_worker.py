@@ -19,6 +19,7 @@ POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "30"))
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.vehicle_art import get_vehicle_art  # noqa: E402
+from render_worker.thumbnail_gen import generate_thumbnail  # noqa: E402
 
 H = {"Authorization": f"Bearer {API_TOKEN}"}
 
@@ -56,7 +57,7 @@ def _build_props(pipeline: dict, audio_filename: str) -> dict:
             "vehiculoArt": art_filename, "transitionIn": seg.get("transition_in", "cut"),
         })
 
-    hook = (pipeline.get("script_text") or "").split("HOOK:")[-1].split("PROBLEMA:")[0].strip()
+    hook = _extract_hook(pipeline.get("script_text") or "")
     cta = (pipeline.get("script_text") or "").split("CTA:")[-1].strip()
 
     return {
@@ -67,6 +68,10 @@ def _build_props(pipeline: dict, audio_filename: str) -> dict:
         "durationSeconds": storyboard["audio_duration_seconds"],
         "segments": segments,
     }
+
+
+def _extract_hook(script_text: str) -> str:
+    return script_text.split("HOOK:")[-1].split("PROBLEMA:")[0].strip()
 
 
 def _render(pipeline_id: int, props: dict) -> Path:
@@ -89,14 +94,27 @@ def process_one(pipeline: dict) -> None:
         _download_audio(pipeline_id, PUBLIC_DIR / audio_filename)
         props = _build_props(pipeline, audio_filename)
         mp4_path = _render(pipeline_id, props)
+
+        thumb_path = Path(f"/tmp/elenco_{pipeline_id}_thumb.jpg")
+        hook = _extract_hook(pipeline.get("script_text") or "") or "ReyPirataChaman"
+        try:
+            generate_thumbnail(str(mp4_path), hook, str(thumb_path))
+        except Exception as e:
+            print(f"[render_worker] thumbnail fallo (no bloqueante): {e}")
+            thumb_path = None
+
         with open(mp4_path, "rb") as f:
+            files = {"file": (f"{pipeline_id}.mp4", f, "video/mp4")}
+            if thumb_path and thumb_path.exists():
+                files["thumbnail"] = (f"{pipeline_id}_thumb.jpg", open(thumb_path, "rb"), "image/jpeg")
             resp = requests.post(
                 f"{API_BASE}/api/reel-pipeline/{pipeline_id}/render-complete",
-                files={"file": (f"{pipeline_id}.mp4", f, "video/mp4")},
-                headers=H, timeout=300,
+                files=files, headers=H, timeout=300,
             )
             resp.raise_for_status()
         mp4_path.unlink(missing_ok=True)
+        if thumb_path:
+            thumb_path.unlink(missing_ok=True)
         print(f"[render_worker] pipeline {pipeline_id} -> render_ready")
     except Exception as e:
         print(f"[render_worker] pipeline {pipeline_id} fallo: {e}")

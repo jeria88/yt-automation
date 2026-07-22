@@ -68,6 +68,10 @@ class ReelPipeline(Base):
     script_text = Column(Text)
     hook_variant = Column(Integer, default=1)
 
+    title = Column(String(200))
+    description = Column(Text)
+    thumbnail_path = Column(String(500))
+
     telegram_chat_id = Column(String(32))
     telegram_script_message_id = Column(String(32))
     telegram_audio_message_id = Column(String(32))

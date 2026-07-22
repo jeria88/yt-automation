@@ -263,7 +263,10 @@ def test_audio_endpoint_404_when_missing():
     assert r.status_code == 404
 
 
-def test_render_complete_saves_file_and_updates_status():
+def test_render_complete_saves_file_and_updates_status(monkeypatch):
+    import app.routers.reel_pipeline as reel_pipeline_module
+    monkeypatch.setattr(reel_pipeline_module, "publish_pipeline", lambda pipeline_id: None)
+
     with SessionLocal() as s:
         row = ReelPipeline(status="rendering")
         s.add(row)
@@ -284,3 +287,82 @@ def test_render_complete_saves_file_and_updates_status():
         assert row.status == "render_ready"
         assert row.rendered_video_path is not None
         assert os.path.exists(row.rendered_video_path)
+
+
+def test_render_complete_saves_thumbnail(monkeypatch):
+    import app.routers.reel_pipeline as reel_pipeline_module
+    monkeypatch.setattr(reel_pipeline_module, "publish_pipeline", lambda pipeline_id: None)
+
+    with SessionLocal() as s:
+        row = ReelPipeline(status="rendering")
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        pipeline_id = row.id
+
+    c = TestClient(app)
+    r = c.post(
+        f"/api/reel-pipeline/{pipeline_id}/render-complete",
+        headers=H,
+        files={
+            "file": ("out.mp4", b"fake-mp4-bytes", "video/mp4"),
+            "thumbnail": ("thumb.jpg", b"fake-jpg-bytes", "image/jpeg"),
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    with SessionLocal() as s:
+        row = s.get(ReelPipeline, pipeline_id)
+        assert row.thumbnail_path is not None
+        assert os.path.exists(row.thumbnail_path)
+
+
+def test_publish_pipeline_success(monkeypatch):
+    import app.pipeline_jobs as pipeline_jobs
+
+    sent = []
+    monkeypatch.setattr(pipeline_jobs, "send_message", lambda chat_id, text, **kw: sent.append(text))
+    monkeypatch.setattr(pipeline_jobs, "generate_metadata", lambda script: {"title": "T", "description": "D"})
+    monkeypatch.setattr(pipeline_jobs, "publish", lambda *a, **kw: {"video_id": "abc123", "url": "https://youtube.com/watch?v=abc123"})
+
+    with SessionLocal() as s:
+        row = ReelPipeline(status="render_ready", telegram_chat_id="555", script_text="x", rendered_video_path="x.mp4")
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        pipeline_id = row.id
+
+    pipeline_jobs.publish_pipeline(pipeline_id)
+
+    with SessionLocal() as s:
+        row = s.get(ReelPipeline, pipeline_id)
+        assert row.status == "published"
+        assert row.youtube_video_id == "abc123"
+        assert row.title == "T"
+    assert any("abc123" in s or "youtube.com" in s for s in sent)
+
+
+def test_publish_pipeline_marks_error_on_failure(monkeypatch):
+    import app.pipeline_jobs as pipeline_jobs
+
+    monkeypatch.setattr(pipeline_jobs, "send_message", lambda *a, **kw: None)
+    monkeypatch.setattr(pipeline_jobs, "generate_metadata", lambda script: {"title": "T", "description": "D"})
+
+    def boom(*a, **kw):
+        raise RuntimeError("youtube api reventó")
+
+    monkeypatch.setattr(pipeline_jobs, "publish", boom)
+
+    with SessionLocal() as s:
+        row = ReelPipeline(status="render_ready", script_text="x", rendered_video_path="x.mp4")
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        pipeline_id = row.id
+
+    pipeline_jobs.publish_pipeline(pipeline_id)
+
+    with SessionLocal() as s:
+        row = s.get(ReelPipeline, pipeline_id)
+        assert row.status == "error"
+        assert "youtube api reventó" in row.last_error
