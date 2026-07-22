@@ -39,6 +39,10 @@ def _handle_message(msg: dict) -> None:
 
     if "voice" in msg:
         _handle_voice(chat_id, msg["voice"])
+    elif "audio" in msg:
+        _handle_voice(chat_id, msg["audio"])
+    elif "document" in msg and (msg["document"].get("mime_type") or "").startswith("audio/"):
+        _handle_voice(chat_id, msg["document"])
     elif msg.get("text") == "/start":
         send_message(chat_id, "Hola! Soy el bot de ReyPirataChaman. Te voy a mandar guiones propuestos para que grabes tu voz.")
     elif msg.get("text") == "/nuevo":
