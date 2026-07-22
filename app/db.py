@@ -115,5 +115,27 @@ class VideoMetrics(Base):
     likes = Column(Integer)
 
 
+def _migrate_missing_columns():
+    """Base.metadata.create_all() solo crea tablas nuevas, no altera las que ya
+    existen. ponytail: sin Alembic para un repo chico, pero las columnas
+    agregadas a una tabla YA deployada necesitan este empujon manual."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if "reel_pipeline" not in inspector.get_table_names():
+        return
+    existing = {c["name"] for c in inspector.get_columns("reel_pipeline")}
+    missing = {
+        "title": "VARCHAR(200)",
+        "description": "TEXT",
+        "thumbnail_path": "VARCHAR(500)",
+    }
+    with engine.begin() as conn:
+        for col, coltype in missing.items():
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE reel_pipeline ADD COLUMN {col} {coltype}"))
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _migrate_missing_columns()
