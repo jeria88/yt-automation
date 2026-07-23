@@ -137,26 +137,38 @@ const BrandGrade: React.FC<{ jade: string; dark: string }> = ({ jade, dark }) =>
 /** Card de apoyo: nombre del autor/personaje + una cita suya relacionada al
  * tema del beat (feedback Franco). Vive a la izquierda, en el tercio medio -
  * no compite con el personaje (arriba-derecha) ni con los subtitulos (abajo). */
+/** Globo de dialogo real (feedback Franco: no una tarjeta flotante - la cita
+ * tiene que salir de la boca del personaje). Colita apuntando hacia arriba-
+ * derecha, donde vive VehicleSegment (top:8%, right:2%). */
 const AuthorCard: React.FC<{ name?: string; quote?: string; jade: string; cream: string; fadeInFrames: number }> = ({
   name, quote, jade, cream, fadeInFrames,
 }) => {
   const frame = useCurrentFrame();
-  if (!name) return null;
+  if (!name || !quote) return null;
   const opacity = interpolate(frame, [0, fadeInFrames], [0, 1], { extrapolateRight: 'clamp' });
+  const bubbleBg = 'rgba(6,14,12,0.82)';
   return (
-    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'flex-start', padding: '0 64px', top: '-6%' }}>
-      <div style={{ maxWidth: 560, opacity, borderLeft: `4px solid ${jade}`, paddingLeft: 24 }}>
-        {quote && (
-          <div style={{
-            fontFamily: outfit, fontSize: 34, fontWeight: 500, fontStyle: 'italic', color: cream,
-            lineHeight: 1.35, marginBottom: 14, textShadow: '0 2px 12px rgba(0,0,0,0.85)',
-          }}>
-            "{quote}"
-          </div>
-        )}
-        <div style={{ fontFamily: outfit, fontSize: 28, fontWeight: 800, color: jade, textShadow: '0 2px 10px rgba(0,0,0,0.85)' }}>
+    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'flex-start', padding: '0 56px', top: '-10%' }}>
+      <div style={{
+        position: 'relative', maxWidth: 540, opacity, background: bubbleBg,
+        border: `2px solid ${jade}66`, borderRadius: 28, padding: '22px 28px',
+        boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+      }}>
+        <div style={{
+          fontFamily: outfit, fontSize: 32, fontWeight: 500, fontStyle: 'italic', color: cream,
+          lineHeight: 1.32, marginBottom: 12,
+        }}>
+          "{quote}"
+        </div>
+        <div style={{ fontFamily: outfit, fontSize: 26, fontWeight: 800, color: jade }}>
           — {name}
         </div>
+        {/* colita del globo, apunta hacia el personaje arriba-derecha */}
+        <div style={{
+          position: 'absolute', right: -22, top: 46, width: 0, height: 0,
+          borderTop: '16px solid transparent', borderBottom: '4px solid transparent',
+          borderLeft: `26px solid ${bubbleBg}`, transform: 'rotate(-22deg)',
+        }} />
       </div>
     </AbsoluteFill>
   );

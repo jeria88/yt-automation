@@ -34,6 +34,72 @@ SHONEN_STYLE_PREFIX = (
     "glowing aura effect, dramatic lighting, high detail anime portrait of "
 )
 
+# feedback Franco: el txt2img puro (prompt solo con el nombre) ignoraba la
+# identidad real y devolvia siempre el mismo "protagonista shonen generico"
+# para cualquier autor - cero parecido, y ademas indistinguible entre
+# personajes distintos. Probado img2img real (`kontext` de Pollinations)
+# pero ya no es anonimo/gratis - pide cuenta en enter.pollinations.ai y no
+# esta confirmado que el tier gratis alcance sin pagar (regla de Franco: cero
+# tokens pagos). Fix que SI es gratis verificado: sacar rasgos fisicos reales
+# de la bio de Wikipedia (via Gemini free tier, ya el unico LLM del canal) e
+# inyectarlos en el prompt de texto - cada personaje sale visualmente
+# distinto y mas fiel, sin transformar una foto real.
+WIKI_SUMMARY_URL = "https://{lang}.wikipedia.org/api/rest_v1/page/summary/{title}"
+TRAITS_CACHE_FILE = "traits_cache.json"
+
+
+def _wikipedia_extract(vehiculo: str) -> str | None:
+    """Bio corta del personaje via Wikipedia REST API (gratis, sin key).
+    Prueba espanol primero, cae a ingles. None si no hay pagina (figuras muy
+    oscuras/ficticias)."""
+    import requests
+
+    title = quote(vehiculo.replace(" ", "_"))
+    for lang in ("es", "en"):
+        try:
+            url = WIKI_SUMMARY_URL.format(lang=lang, title=title)
+            resp = requests.get(url, timeout=15, headers={"User-Agent": "yt-automation/1.0"})
+            if resp.status_code != 200:
+                continue
+            extract = resp.json().get("extract")
+            if extract:
+                return extract
+        except Exception as e:
+            print(f"[vehicle_art] wikipedia lookup fallo para '{vehiculo}' ({lang}): {e}", file=sys.stderr)
+    return None
+
+
+def _visual_traits(vehiculo: str, root: Path) -> str:
+    """Rasgos fisicos distintivos en una frase corta, cacheados en disco (1
+    llamada a Gemini por vehiculo nuevo, no por video). Si Wikipedia o Gemini
+    fallan, degrada a "" - el prompt sigue funcionando solo con el nombre."""
+    from app.gemini import ask_text
+
+    slug = _slug(vehiculo)
+    cache_path = root / TRAITS_CACHE_FILE
+    cache = json.loads(cache_path.read_text()) if cache_path.exists() else {}
+    if slug in cache:
+        return cache[slug]
+
+    traits = ""
+    bio = _wikipedia_extract(vehiculo)
+    if bio:
+        try:
+            prompt = (
+                f"Bio: {bio[:600]}\n\n"
+                "En una frase corta (max 15 palabras, sin comillas), describe rasgos "
+                "FISICOS distintivos para dibujar el personaje: edad aproximada, pelo, "
+                "rostro, vestimenta/epoca tipica. Solo la frase, nada mas."
+            )
+            traits = ask_text(prompt).strip().strip('"')
+        except Exception as e:
+            print(f"[vehicle_art] gemini traits fallo para '{vehiculo}': {e}", file=sys.stderr)
+
+    cache[slug] = traits
+    root.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
+    return traits
+
 _rembg_session = None
 
 
@@ -83,18 +149,22 @@ def _pick_from_cache(root: Path, slug: str, n: int) -> list[Path]:
     return [p for _, p in kept][:n]
 
 
-def _fetch_candidates(vehiculo: str, out_dir: Path, k: int) -> list[Path]:
-    """Genera k variaciones (seeds distintos) en estilo shonen, en vez de
-    buscar imagenes existentes - eso era lo que daba el estilo inconsistente
-    que Franco no queria."""
+def _fetch_candidates(vehiculo: str, out_dir: Path, k: int, root: Path) -> list[Path]:
+    """Genera k variaciones (seeds distintos) en estilo shonen, con rasgos
+    fisicos reales del personaje (Wikipedia+Gemini, cacheados) sumados al
+    prompt para que cada figura salga distinguible y mas fiel."""
     import requests
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    prompt = quote(f"{SHONEN_STYLE_PREFIX}{vehiculo}")
+    traits = _visual_traits(vehiculo, root)
+    suffix = f", {traits}" if traits else ""
+    prompt = quote(f"{SHONEN_STYLE_PREFIX}{vehiculo}{suffix}")
+    base_url = POLLINATIONS_URL.format(prompt=prompt)
+
     paths: list[Path] = []
     for seed in range(k):
         try:
-            url = f"{POLLINATIONS_URL.format(prompt=prompt)}?width=768&height=1024&nologo=true&seed={seed}"
+            url = f"{base_url}?width=768&height=1024&nologo=true&seed={seed}"
             data = requests.get(url, timeout=60).content
             dst = out_dir / f"cand-{seed:02d}.jpg"
             dst.write_bytes(data)
@@ -142,7 +212,7 @@ def get_vehicle_art(vehiculo: str, n: int = 2) -> list[Path]:
 
     folder = root / slug
     tmp = folder / "_tmp"
-    candidates = _fetch_candidates(vehiculo, tmp, N_FETCH)
+    candidates = _fetch_candidates(vehiculo, tmp, N_FETCH, root)
     if not candidates:
         return cached
 
