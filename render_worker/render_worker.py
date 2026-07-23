@@ -19,7 +19,7 @@ POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "30"))
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.vehicle_art import get_vehicle_art  # noqa: E402
-from render_worker.thumbnail_gen import generate_thumbnail  # noqa: E402
+from app.thumbnail_gen import generate_thumbnail  # noqa: E402
 
 H = {"Authorization": f"Bearer {API_TOKEN}"}
 
@@ -35,6 +35,25 @@ def _fetch_pending() -> list[dict]:
     resp = requests.get(f"{API_BASE}/api/reel-pipeline", params={"status": "storyboard_ready"}, headers=H, timeout=30)
     resp.raise_for_status()
     return resp.json()
+
+
+def _fill_backlog() -> None:
+    """No-op si el backlog ya esta lleno (fill_backlog del lado API solo crea
+    lo que falta) - seguro llamarlo en cada vuelta del loop."""
+    resp = requests.post(f"{API_BASE}/api/reel-pipeline/fill-backlog", headers=H, timeout=120)
+    resp.raise_for_status()
+    created = resp.json().get("created", [])
+    if created:
+        print(f"[render_worker] backlog rellenado: {created}")
+
+
+def _check_performance() -> None:
+    """No-op para publicados que todavia no llegan a la ventana de Fase 7."""
+    resp = requests.post(f"{API_BASE}/api/reel-pipeline/check-performance", headers=H, timeout=120)
+    resp.raise_for_status()
+    checked = [c for c in resp.json().get("checked", []) if c["result"] not in ("skip", "too_soon")]
+    if checked:
+        print(f"[render_worker] performance chequeada: {checked}")
 
 
 def _download_audio(pipeline_id: int, dst: Path) -> None:
@@ -125,6 +144,14 @@ def main() -> None:
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
     print(f"[render_worker] arrancando, poll cada {POLL_SECONDS}s")
     while True:
+        try:
+            _fill_backlog()
+        except Exception as e:
+            print(f"[render_worker] fill-backlog fallo: {e}")
+        try:
+            _check_performance()
+        except Exception as e:
+            print(f"[render_worker] check-performance fallo: {e}")
         try:
             pending = _fetch_pending()
             for pipeline in pending:

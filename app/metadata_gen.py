@@ -12,10 +12,11 @@ conciencia y meditacion llamado "ReyPirataChaman". Genera:
 
 Guion:
 {script}
-
+{learnings}
 Devolveme SOLO JSON: {{"title": "...", "description": "..."}}
 """
 
 
 def generate_metadata(script_text: str) -> dict:
-    return ask_json(PROMPT.format(script=script_text))
+    from app.performance_learnings import learnings_prompt_context
+    return ask_json(PROMPT.format(script=script_text, learnings=learnings_prompt_context()))

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.db import SessionLocal, ReelPipeline
 from app.auth import get_current_token
 from app.backlog import fill_backlog
-from app.pipeline_jobs import process_audio, publish_pipeline
+from app.pipeline_jobs import check_all_published, process_audio, publish_pipeline
 
 router = APIRouter(prefix="/api/reel-pipeline", dependencies=[Depends(get_current_token)])
 
@@ -91,6 +91,11 @@ def update_status(pipeline_id: int, payload: ReelPipelinePatch):
 def trigger_fill_backlog():
     created = fill_backlog()
     return {"created": created}
+
+
+@router.post("/check-performance")
+def trigger_check_performance():
+    return {"checked": check_all_published()}
 
 
 @router.post("/{pipeline_id}/retry-storyboard")

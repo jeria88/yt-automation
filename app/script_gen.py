@@ -15,6 +15,8 @@ SYSTEM = (
 
 
 def generate_from_topic(topic: dict) -> str:
+    from app.performance_learnings import learnings_prompt_context
+
     philosophy = random.choice(list(PHILOSOPHIES.keys()))
     phil_text = PHILOSOPHIES[philosophy]
     prompt = (
@@ -23,7 +25,8 @@ def generate_from_topic(topic: dict) -> str:
         f"no lo copies, usalo solo como referencia del angulo que interesa a la audiencia):\n"
         f"- Keyword: {topic['keyword']}\n"
         f"- Titulo de referencia: {topic['title']}\n\n"
-        f"Filosofia Endonautas a integrar: {phil_text}\n\n"
+        f"Filosofia Endonautas a integrar: {phil_text}"
+        f"{learnings_prompt_context()}\n"
         f"Genera el guion con los 5 encabezados."
     )
     return ask_text(prompt)
