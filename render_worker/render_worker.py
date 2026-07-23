@@ -82,6 +82,8 @@ def _build_props(pipeline: dict, audio_filename: str) -> dict:
         segments.append({
             "start": seg["start"], "end": seg["end"],
             "vehiculoArt": art_filename, "brollGif": gif_filename,
+            "vehiculoName": seg.get("vehiculo") if art_filename else None,
+            "quote": seg.get("quote") if art_filename else None,
             "transitionIn": seg.get("transition_in", "cut"),
         })
 

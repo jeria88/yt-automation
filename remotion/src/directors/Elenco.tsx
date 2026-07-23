@@ -25,6 +25,8 @@ export type ElencoSegment = {
   end: number;
   vehiculoArt?: string; // path/url del cutout PNG - sin arte, el segmento queda solo con el fondo
   brollGif?: string; // path/url del GIF de fondo para este segmento (GIPHY) - opcional
+  vehiculoName?: string; // nombre del autor/personaje, para el card de apoyo
+  quote?: string; // cita del vehiculo relacionada al tema de este beat
   transitionIn: 'cut' | 'xfade';
 };
 
@@ -108,6 +110,34 @@ const VehicleSegment: React.FC<{ art?: string; xfadeFrames: number }> = ({ art, 
   );
 };
 
+/** Card de apoyo: nombre del autor/personaje + una cita suya relacionada al
+ * tema del beat (feedback Franco). Vive a la izquierda, en el tercio medio -
+ * no compite con el personaje (arriba-derecha) ni con los subtitulos (abajo). */
+const AuthorCard: React.FC<{ name?: string; quote?: string; jade: string; cream: string; fadeInFrames: number }> = ({
+  name, quote, jade, cream, fadeInFrames,
+}) => {
+  const frame = useCurrentFrame();
+  if (!name) return null;
+  const opacity = interpolate(frame, [0, fadeInFrames], [0, 1], { extrapolateRight: 'clamp' });
+  return (
+    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'flex-start', padding: '0 64px', top: '-6%' }}>
+      <div style={{ maxWidth: 560, opacity, borderLeft: `4px solid ${jade}`, paddingLeft: 24 }}>
+        {quote && (
+          <div style={{
+            fontFamily: outfit, fontSize: 34, fontWeight: 500, fontStyle: 'italic', color: cream,
+            lineHeight: 1.35, marginBottom: 14, textShadow: '0 2px 12px rgba(0,0,0,0.85)',
+          }}>
+            "{quote}"
+          </div>
+        )}
+        <div style={{ fontFamily: outfit, fontSize: 28, fontWeight: 800, color: jade, textShadow: '0 2px 10px rgba(0,0,0,0.85)' }}>
+          — {name}
+        </div>
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 /** Subtitulos karaoke: timestamps REALES de whisper (Fase 3), no stagger
  * sintetico - la palabra activa se resalta segun su word.start/end real. */
 const CaptionTrack: React.FC<{ segments: TranscriptSegment[]; color: string; accent: string }> = ({
@@ -162,6 +192,17 @@ export const Elenco: React.FC<ElencoProps> = (props) => {
         return (
           <Sequence key={`veh-${i}`} from={from} durationInFrames={to - from}>
             <VehicleSegment art={seg.vehiculoArt} xfadeFrames={xfade} />
+          </Sequence>
+        );
+      })}
+
+      {segments.map((seg, i) => {
+        const from = Math.round(seg.start * fps);
+        const to = Math.min(Math.round(seg.end * fps), ctaStart);
+        if (to <= from) return null;
+        return (
+          <Sequence key={`author-${i}`} from={from} durationInFrames={to - from}>
+            <AuthorCard name={seg.vehiculoName} quote={seg.quote} jade={tokens.jade} cream={tokens.cream} fadeInFrames={14} />
           </Sequence>
         );
       })}

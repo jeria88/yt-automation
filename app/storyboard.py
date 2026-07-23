@@ -34,10 +34,16 @@ describan el tema/mood visual de ese beat para buscar un GIF de fondo (ej.
 "ocean waves", "cosmic space", "deep breathing", "mirror reflection") - nunca
 el nombre del vehiculo, es sobre el TEMA que se esta narrando en ese momento.
 
+Y una "quote": una cita corta (maximo 140 caracteres) atribuible al vehiculo
+de ese beat, relacionada con lo que se esta narrando en ese momento - preferi
+una cita REAL y conocida de esa persona si existe y calza con el tema; si no,
+una frase breve coherente con su forma de pensar (nunca inventes una cita
+absurda o que contradiga lo que esa persona realmente defendia). En espanol.
+
 Devolveme SOLO un JSON con esta forma exacta, sin texto extra:
 {{
   "segments": [
-    {{"index": 0, "start": 0.0, "end": 12.3, "vehiculo": "Nombre Real Y Apellido", "broll_keyword": "ocean waves", "transition_in": "cut"}},
+    {{"index": 0, "start": 0.0, "end": 12.3, "vehiculo": "Nombre Real Y Apellido", "broll_keyword": "ocean waves", "quote": "Cita corta y relevante.", "transition_in": "cut"}},
     ...
   ]
 }}

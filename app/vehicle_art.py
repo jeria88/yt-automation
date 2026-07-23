@@ -1,8 +1,14 @@
 """Arte por vehiculo: cutouts PNG transparentes de la figura real que narra
-cada segmento del storyboard. Portado (simplificado) de content-studio
-shared/vehicle_art.py - fetch (DuckDuckGo, gratis) + recorte (rembg, gratis) +
-cache en disco. Sin gate VLM (v1: content-studio lo salta igual sin key VLM
-dedicada; acá directamente no lo implementamos todavia, ver Fase 4 notas)."""
+cada segmento del storyboard, generados en estilo shonen anime consistente
+(feedback Franco: el estilo mixto de fotos/ilustraciones scrapeadas de
+internet no le gustaba - quiere el mismo estilo del logo del canal, un
+personaje/aura estilo One Piece, aplicado a cada figura real).
+
+Generacion via Pollinations.ai (gratis, sin API key, sin login - genera con
+Flux/SDXL via un simple GET) en vez de buscar imagenes existentes. + recorte
+(rembg, gratis) + cache en disco. Sin gate VLM (v1: content-studio lo salta
+igual sin key VLM dedicada; aca directamente no lo implementamos todavia,
+ver Fase 4 notas)."""
 import io
 import json
 import os
@@ -10,11 +16,23 @@ import re
 import sys
 import unicodedata
 from pathlib import Path
+from urllib.parse import quote
 
 VEHICLE_ROOT = Path(os.getenv("VEHICLE_ART_DIR", "./vehiculos"))
 REMBG_CACHE_DIR = os.getenv("REMBG_CACHE_DIR", "./rembg_cache")
-N_FETCH = int(os.getenv("VEHICLE_N_FETCH", "8"))
+N_FETCH = int(os.getenv("VEHICLE_N_FETCH", "3"))
 MIN_SUBJECT_PX = int(os.getenv("VEHICLE_MIN_SUBJECT_PX", "600"))
+
+POLLINATIONS_URL = "https://image.pollinations.ai/prompt/{prompt}"
+# Estilo primero y repetido - el modelo pesa fuerte los primeros tokens, y
+# nombres muy asociados a una estatua/pintura especifica (ej. "Marcus
+# Aurelius") pueden pisar el prompt de estilo si no se insiste (probado:
+# seed 0 devolvio una estatua de bronce en vez de anime, seed 1 SI dio anime).
+SHONEN_STYLE_PREFIX = (
+    "shonen anime manga illustration, digital anime art, NOT a photo, NOT a statue, "
+    "NOT photorealistic, One Piece Shonen Jump style, vibrant colors, dynamic dramatic pose, "
+    "glowing aura effect, dramatic lighting, high detail anime portrait of "
+)
 
 _rembg_session = None
 
@@ -66,33 +84,23 @@ def _pick_from_cache(root: Path, slug: str, n: int) -> list[Path]:
 
 
 def _fetch_candidates(vehiculo: str, out_dir: Path, k: int) -> list[Path]:
+    """Genera k variaciones (seeds distintos) en estilo shonen, en vez de
+    buscar imagenes existentes - eso era lo que daba el estilo inconsistente
+    que Franco no queria."""
     import requests
-    from ddgs import DDGS
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    queries = [f"{vehiculo} png render transparent", f"{vehiculo} official art portrait"]
-    seen: set[str] = set()
+    prompt = quote(f"{SHONEN_STYLE_PREFIX}{vehiculo}")
     paths: list[Path] = []
-    try:
-        with DDGS() as ddgs:
-            for q in queries:
-                for r in ddgs.images(q, max_results=k):
-                    url = r.get("image")
-                    if not url or url in seen:
-                        continue
-                    seen.add(url)
-                    try:
-                        data = requests.get(url, timeout=20).content
-                        ext = ".png" if url.lower().split("?")[0].endswith(".png") else ".jpg"
-                        dst = out_dir / f"cand-{len(paths):02d}{ext}"
-                        dst.write_bytes(data)
-                        paths.append(dst)
-                    except Exception:
-                        continue
-                    if len(paths) >= k:
-                        return paths
-    except Exception as e:
-        print(f"[vehicle_art] fetch fallo para '{vehiculo}': {e}", file=sys.stderr)
+    for seed in range(k):
+        try:
+            url = f"{POLLINATIONS_URL.format(prompt=prompt)}?width=768&height=1024&nologo=true&seed={seed}"
+            data = requests.get(url, timeout=60).content
+            dst = out_dir / f"cand-{seed:02d}.jpg"
+            dst.write_bytes(data)
+            paths.append(dst)
+        except Exception as e:
+            print(f"[vehicle_art] generacion fallo para '{vehiculo}' seed {seed}: {e}", file=sys.stderr)
     return paths
 
 
@@ -107,7 +115,10 @@ def _cutout(src: Path, dst: Path) -> bool:
         from rembg import new_session, remove
         if _rembg_session is None:
             os.environ.setdefault("U2NET_HOME", REMBG_CACHE_DIR)
-            _rembg_session = new_session("u2net")
+            # isnet-anime (no u2net generico): mismo modelo que usa content-studio
+            # para arte estilo anime - u2net dejaba halos blancos difusos en el
+            # aura/pelo de las imagenes generadas en estilo shonen.
+            _rembg_session = new_session("isnet-anime")
         out = remove(src.read_bytes(), session=_rembg_session)
         Image.open(io.BytesIO(out)).convert("RGBA").save(dst, "PNG")
         return True
