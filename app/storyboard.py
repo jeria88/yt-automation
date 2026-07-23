@@ -29,10 +29,18 @@ Guion completo:
 Segmentos con timestamps (inicio-fin en segundos, texto):
 {segments}
 
-Ademas, para cada beat asigna un "broll_keyword": 1-3 palabras EN INGLES que
-describan el tema/mood visual de ese beat para buscar un GIF de fondo (ej.
-"ocean waves", "cosmic space", "deep breathing", "mirror reflection") - nunca
-el nombre del vehiculo, es sobre el TEMA que se esta narrando en ese momento.
+Ademas, para cada beat asigna un "broll_keyword": 1-3 palabras EN INGLES para
+buscar un clip de VIDEO STOCK real de fondo (Pexels/Pixabay). La keyword tiene
+que describir un OBJETO, ESCENA o ACCION FISICA CONCRETA que exista como clip
+filmable - NUNCA un sentimiento, estado interno o concepto abstracto suelto
+("mood", "feeling", "conflict", "peace", "awakening" sin ancla visual no
+sirven, un buscador de stock no tiene como matchearlos y devuelve basura).
+Bien: "candle flame", "forest path", "night sky stars", "hands writing",
+"ocean waves", "city traffic". Mal: "inner conflict" (abstracto), "mirror
+reflection" (sin objeto fisico), "deep breathing" (no es una escena
+filmable), "cosmic space" (demasiado generico). Nunca el nombre del
+vehiculo - es sobre el TEMA que se esta narrando en ese momento, traducido a
+algo que una camara pueda filmar.
 
 Y una "quote": una cita corta (maximo 140 caracteres) atribuible al vehiculo
 de ese beat, relacionada con lo que se esta narrando en ese momento - preferi

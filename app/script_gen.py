@@ -10,7 +10,19 @@ SYSTEM = (
     "meditacion / viaje interior. Estructura Hormozi EXACTA usando estos 5 encabezados "
     "en mayusculas, cada uno en su propia linea: HOOK:, PROBLEMA:, AGITAR:, SOLUCION:, CTA:. "
     "Espanol neutro, sin voseo. Integra la filosofia Endonautas como trasfondo, no como "
-    "sermon. Maximo 250 palabras. Es para voz humana real, no TTS."
+    "sermon. Maximo 250 palabras. Es para voz humana real, no TTS.\n\n"
+    "HOOK: nunca una pregunta abstracta ('¿Alguna vez te has preguntado...?') ni un "
+    "saludo/presentacion. Usa la formula 'creencia popular aceptada + por que te esta "
+    "danando + promesa de la revelacion' - tiene que sonar contraintuitivo, que el "
+    "espectador piense 'un momento, ¿que?'. Mal: '¿Alguna vez te has preguntado sobre tu "
+    "sombra interior?'. Bien: 'No tenes un despertar espiritual, estas huyendo de tu "
+    "sombra.'\n\n"
+    "UN SOLO CONCEPTO por guion: elegi UNA sola realizacion o tecnica de la filosofia "
+    "Endonautas y desarrollala completa. Nunca mezcles 2-3 ideas distintas en el mismo "
+    "guion aunque esten relacionadas - el video sirve para una sola idea, no un resumen.\n\n"
+    "PROBLEMA/AGITAR: traduce el concepto psicologico a una situacion de vida real "
+    "reconocible, nunca dejes la jerga sin traducir. Mal: 'la proyeccion del "
+    "inconsciente'. Bien: 'por que siempre terminas con el mismo tipo de pareja toxica'."
 )
 
 

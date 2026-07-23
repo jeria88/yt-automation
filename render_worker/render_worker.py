@@ -18,7 +18,7 @@ PUBLIC_DIR = REMOTION_DIR / "public"
 POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "30"))
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from app.broll_gif import get_broll_gif  # noqa: E402
+from app.broll_gif import get_broll_video  # noqa: E402
 from app.vehicle_art import get_or_request_review, get_vehicle_art, slug_for  # noqa: E402
 from app.thumbnail_gen import generate_thumbnail  # noqa: E402
 from app.telegram_bot import send_photo  # noqa: E402
@@ -75,15 +75,15 @@ def _build_props(pipeline: dict, audio_filename: str) -> dict:
             art_filename = f"seg{i}.png"
             (PUBLIC_DIR / art_filename).write_bytes(Path(paths[0]).read_bytes())
 
-        gif_filename = None
-        gif_path = get_broll_gif(seg.get("broll_keyword", ""))
-        if gif_path:
-            gif_filename = f"broll{i}.gif"
-            (PUBLIC_DIR / gif_filename).write_bytes(gif_path.read_bytes())
+        video_filename = None
+        video_path = get_broll_video(seg.get("broll_keyword", ""))
+        if video_path:
+            video_filename = f"broll{i}.mp4"
+            (PUBLIC_DIR / video_filename).write_bytes(video_path.read_bytes())
 
         segments.append({
             "start": seg["start"], "end": seg["end"],
-            "vehiculoArt": art_filename, "brollGif": gif_filename,
+            "vehiculoArt": art_filename, "brollVideo": video_filename,
             "vehiculoName": seg.get("vehiculo") if art_filename else None,
             "quote": seg.get("quote") if art_filename else None,
             "transitionIn": seg.get("transition_in", "cut"),

@@ -7,13 +7,19 @@
  * v3 (feedback Franco tras ver el video v2): la fuente (Space Grotesk) se
  * sentia muy cuadrada/corporativa -> Outfit (redondeada, mas calida). El
  * fondo abstracto (gradiente + flash) se veia mal -> reemplazado por broll
- * real (GIF de GIPHY, licenciado para reinsertar - no scraping de video con
- * riesgo de copyright) alineado a la keyword del segmento. El personaje
- * tapaba los subtitulos (mismo bottom-anchored + scrim grande) -> mas chico,
- * reposicionado arriba del area de subtitulos, scrim de texto mas angosto. */
+ * real alineado a la keyword del segmento. El personaje tapaba los
+ * subtitulos (mismo bottom-anchored + scrim grande) -> mas chico,
+ * reposicionado arriba del area de subtitulos, scrim de texto mas angosto.
+ *
+ * v4 (feedback Franco: los GIF de GIPHY traian texto/marca de agua ajenos
+ * quemados en la imagen - verificado en vivo, uno era literalmente una
+ * quote-card de Pinterest). GIPHY es un indice de memes/reacciones, no de
+ * b-roll. Reemplazado por video stock real (Pexels/Pixabay, patron
+ * adoptado de MoneyPrinterTurbo/ShortGPT - ver broll_gif.py), sin audio
+ * propio y con loop corto (los clips de stock duran al menos 4s
+ * garantizado por el backend, pero un segmento puede durar mas). */
 import React from 'react';
-import { AbsoluteFill, Audio, Img, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
-import { Gif } from '@remotion/gif';
+import { AbsoluteFill, Audio, Loop, OffthreadVideo, Img, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import { loadFont } from '@remotion/google-fonts/Outfit';
 import { fadeWindow } from '../effects';
 import { KineticPhrase } from '../kinetic';
@@ -24,7 +30,7 @@ export type ElencoSegment = {
   start: number; // segundos, real (whisper)
   end: number;
   vehiculoArt?: string; // path/url del cutout PNG - sin arte, el segmento queda solo con el fondo
-  brollGif?: string; // path/url del GIF de fondo para este segmento (GIPHY) - opcional
+  brollVideo?: string; // path/url del clip de stock de fondo para este segmento (Pexels/Pixabay) - opcional
   vehiculoName?: string; // nombre del autor/personaje, para el card de apoyo
   quote?: string; // cita del vehiculo relacionada al tema de este beat
   transitionIn: 'cut' | 'xfade';
@@ -67,14 +73,23 @@ const TextBlock: React.FC<{ children: React.ReactNode; size: number; y: number; 
   </AbsoluteFill>
 );
 
-/** Fondo: GIF real (GIPHY) en loop suave, con overlay oscuro para legibilidad.
- * Sin GIF para el segmento -> queda el color base solo (nunca un gradiente/
- * flash abstracto, eso fue lo que se vio mal en v2). */
-const BrollBackground: React.FC<{ gif?: string; dark: string }> = ({ gif, dark }) => {
-  if (!gif) return <AbsoluteFill style={{ backgroundColor: dark }} />;
+// Ventana de loop conservadora: el backend garantiza >=4s por clip
+// (MIN_DURATION_SECONDS en broll_gif.py), 3.5s deja margen sin arriesgar
+// pedir un frame que no existe en clips justo en el limite.
+const BROLL_LOOP_SECONDS = 3.5;
+
+/** Fondo: video de stock real (Pexels/Pixabay) en loop corto, sin audio
+ * propio, con overlay oscuro para legibilidad. Sin video para el segmento
+ * -> queda el color base solo (nunca un gradiente/flash abstracto, eso fue
+ * lo que se vio mal en v2). */
+const BrollBackground: React.FC<{ video?: string; dark: string }> = ({ video, dark }) => {
+  const { fps } = useVideoConfig();
+  if (!video) return <AbsoluteFill style={{ backgroundColor: dark }} />;
   return (
     <AbsoluteFill style={{ backgroundColor: dark }}>
-      <Gif src={resolveSrc(gif)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} loopBehavior="loop" />
+      <Loop durationInFrames={Math.round(BROLL_LOOP_SECONDS * fps)}>
+        <OffthreadVideo src={resolveSrc(video)} muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </Loop>
       <AbsoluteFill style={{ backgroundColor: dark, opacity: 0.72 }} />
     </AbsoluteFill>
   );
@@ -82,9 +97,15 @@ const BrollBackground: React.FC<{ gif?: string; dark: string }> = ({ gif, dark }
 
 /** Retrato circular chico (feedback Franco: la imagen rectangular se comia
  * la pantalla y se veia "pegada" sin integrar al fondo). Marco circular
- * 24% de ancho maximo + halo jade que la integra al GIF de fondo, en vez
+ * 30% de ancho maximo + halo jade que la integra al GIF de fondo, en vez
  * del cutout rectangular grande de antes. Drift lento seno/coseno (nunca
- * ligado a scroll). Crossfade entre segmentos si transitionIn='xfade'. */
+ * ligado a scroll). Crossfade entre segmentos si transitionIn='xfade'.
+ * v4 (feedback Franco tras ver reprocesado): el Img tenia un zoom manual
+ * extra (150% + offset) ENCIMA del objectFit:cover del propio circulo -
+ * doble zoom que cortaba el mentón y cualquier elemento distintivo debajo
+ * de la cara. Ahora el Img llena el circulo 1:1 con cover, sin zoom manual
+ * adicional; objectPosition '50% 30%' encuadra cara completa + un poco de
+ * pecho/objeto en vez de sesgar hacia arriba (pelo). */
 const VehicleSegment: React.FC<{ art?: string; xfadeFrames: number; jade: string }> = ({ art, xfadeFrames, jade }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -98,7 +119,7 @@ const VehicleSegment: React.FC<{ art?: string; xfadeFrames: number; jade: string
   return (
     <AbsoluteFill style={{ pointerEvents: 'none' }}>
       <div style={{
-        position: 'absolute', top: '9%', right: '7%', width: '24%', aspectRatio: '1 / 1',
+        position: 'absolute', top: '9%', right: '7%', width: '30%', aspectRatio: '1 / 1',
         borderRadius: '50%', overflow: 'hidden', opacity,
         transform: `translate(${dx}px, ${dy}px)`,
         border: `3px solid ${jade}88`,
@@ -107,8 +128,8 @@ const VehicleSegment: React.FC<{ art?: string; xfadeFrames: number; jade: string
         <Img
           src={resolveSrc(art)}
           style={{
-            position: 'absolute', left: '-25%', top: '-12%', width: '150%', height: '150%',
-            objectFit: 'cover', objectPosition: '50% 18%',
+            width: '100%', height: '100%',
+            objectFit: 'cover', objectPosition: '50% 30%',
           }}
         />
       </div>
@@ -141,8 +162,13 @@ const BrandGrade: React.FC<{ jade: string; dark: string }> = ({ jade, dark }) =>
 };
 
 /** Globo de dialogo real (feedback Franco: no una tarjeta flotante - la cita
- * tiene que salir de la boca del personaje). Vive a la izquierda, en el
- * tercio medio, colita apuntando hacia el retrato circular arriba-derecha. */
+ * tiene que salir de la boca del personaje). Vive justo debajo del retrato
+ * circular (arriba-derecha), colita apuntando hacia arriba-derecha hacia el
+ * personaje. v4 (feedback Franco: quedaba "demasiado lejos del texto que
+ * cita" - el centrado vertical + top:-10% lo mandaba casi a mitad de
+ * pantalla, ~lejos del circulo que vive en el 9%-39%). Ahora anclado
+ * top-aligned justo debajo del circulo (que ahora mide 30% y termina en
+ * ~39%), sin el hack de centrado. */
 const AuthorCard: React.FC<{ name?: string; quote?: string; jade: string; cream: string; fadeInFrames: number }> = ({
   name, quote, jade, cream, fadeInFrames,
 }) => {
@@ -151,9 +177,9 @@ const AuthorCard: React.FC<{ name?: string; quote?: string; jade: string; cream:
   const opacity = interpolate(frame, [0, fadeInFrames], [0, 1], { extrapolateRight: 'clamp' });
   const bubbleBg = 'rgba(6,14,12,0.82)';
   return (
-    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'flex-start', padding: '0 56px', top: '-10%' }}>
+    <AbsoluteFill style={{ justifyContent: 'flex-start', alignItems: 'flex-start', padding: '0 40px', top: '30%' }}>
       <div style={{
-        position: 'relative', maxWidth: 540, opacity, background: bubbleBg,
+        position: 'relative', maxWidth: 560, opacity, background: bubbleBg,
         border: `2px solid ${jade}66`, borderRadius: 28, padding: '22px 28px',
         boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
       }}>
@@ -228,7 +254,7 @@ export const Elenco: React.FC<ElencoProps> = (props) => {
         if (to <= from) return null;
         return (
           <Sequence key={`bg-${i}`} from={from} durationInFrames={to - from}>
-            <BrollBackground gif={seg.brollGif} dark={tokens.dark} />
+            <BrollBackground video={seg.brollVideo} dark={tokens.dark} />
           </Sequence>
         );
       })}
