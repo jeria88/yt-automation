@@ -9,10 +9,13 @@ import httpx
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
-# ponytail: free tier de Gemini devuelve 503 seguido bajo carga. 3 intentos con
-# backoff alcanza para el uso de este pipeline (pocas llamadas por hora).
+# ponytail: free tier de Gemini devuelve 429/503 seguido bajo carga y el
+# rate-limit tarda mas que unos segundos en liberarse (visto en produccion:
+# 3 intentos con 3-12s no alcanzaba, seguia 429). 5 intentos con backoff
+# 5/10/20/40s (75s de margen total) le da tiempo real a que se libere.
 RETRY_STATUSES = {429, 500, 502, 503, 504}
-MAX_RETRIES = 3
+MAX_RETRIES = 5
+BACKOFF_BASE_SECONDS = 5
 
 
 def _post_with_retry(payload: dict) -> dict:
@@ -22,7 +25,7 @@ def _post_with_retry(payload: dict) -> dict:
         try:
             resp = httpx.post(f"{GEMINI_URL}?key={key}", json=payload, timeout=60)
             if resp.status_code in RETRY_STATUSES and attempt < MAX_RETRIES - 1:
-                time.sleep(2 ** attempt * 3)
+                time.sleep(2 ** attempt * BACKOFF_BASE_SECONDS)
                 continue
             resp.raise_for_status()
             return resp.json()
@@ -30,7 +33,7 @@ def _post_with_retry(payload: dict) -> dict:
             last_error = e
             if e.response.status_code not in RETRY_STATUSES or attempt == MAX_RETRIES - 1:
                 raise
-            time.sleep(2 ** attempt * 3)
+            time.sleep(2 ** attempt * BACKOFF_BASE_SECONDS)
     raise last_error
 
 
