@@ -17,9 +17,20 @@
  * b-roll. Reemplazado por video stock real (Pexels/Pixabay, patron
  * adoptado de MoneyPrinterTurbo/ShortGPT - ver broll_gif.py), sin audio
  * propio y con loop corto (los clips de stock duran al menos 4s
- * garantizado por el backend, pero un segmento puede durar mas). */
+ * garantizado por el backend, pero un segmento puede durar mas).
+ *
+ * v5 (feedback Franco, confirmado con Gemini: el retrato circular + globo
+ * de cita en pantalla es contraproducente para viralizacion - forzaba a
+ * elegir entre leer la cita o escuchar la narracion). Sacados
+ * VehicleSegment y AuthorCard del todo. Los subtitulos karaoke
+ * (CaptionTrack, ya existian) cubren el rol de "tipografia kinetica en
+ * sync con la voz" sin agregar nada nuevo. El personaje real (vehiculo)
+ * sigue existiendo en el storyboard/guion como referencia de tono/cita,
+ * simplemente no se muestra - el gate de aprobacion de arte por Telegram
+ * en render_worker.py se saca en consecuencia (no tiene proposito si
+ * nada se renderiza). */
 import React from 'react';
-import { AbsoluteFill, Audio, Loop, OffthreadVideo, Img, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, Loop, OffthreadVideo, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import { loadFont } from '@remotion/google-fonts/Outfit';
 import { fadeWindow } from '../effects';
 import { KineticPhrase } from '../kinetic';
@@ -95,48 +106,6 @@ const BrollBackground: React.FC<{ video?: string; dark: string }> = ({ video, da
   );
 };
 
-/** Retrato circular chico (feedback Franco: la imagen rectangular se comia
- * la pantalla y se veia "pegada" sin integrar al fondo). Marco circular
- * 30% de ancho maximo + halo jade que la integra al GIF de fondo, en vez
- * del cutout rectangular grande de antes. Drift lento seno/coseno (nunca
- * ligado a scroll). Crossfade entre segmentos si transitionIn='xfade'.
- * v4 (feedback Franco tras ver reprocesado): el Img tenia un zoom manual
- * extra (150% + offset) ENCIMA del objectFit:cover del propio circulo -
- * doble zoom que cortaba el mentón y cualquier elemento distintivo debajo
- * de la cara. Ahora el Img llena el circulo 1:1 con cover, sin zoom manual
- * adicional; objectPosition '50% 30%' encuadra cara completa + un poco de
- * pecho/objeto en vez de sesgar hacia arriba (pelo). */
-const VehicleSegment: React.FC<{ art?: string; xfadeFrames: number; jade: string }> = ({ art, xfadeFrames, jade }) => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  if (!art) return null;
-  const t = frame / fps;
-  const dx = Math.sin((t / 30) * 2 * Math.PI) * 8;
-  const dy = Math.cos((t / 37) * 2 * Math.PI) * 6;
-  const opacity = xfadeFrames > 0
-    ? interpolate(frame, [0, xfadeFrames], [0, 1], { extrapolateRight: 'clamp' })
-    : 1;
-  return (
-    <AbsoluteFill style={{ pointerEvents: 'none' }}>
-      <div style={{
-        position: 'absolute', top: '9%', right: '7%', width: '30%', aspectRatio: '1 / 1',
-        borderRadius: '50%', overflow: 'hidden', opacity,
-        transform: `translate(${dx}px, ${dy}px)`,
-        border: `3px solid ${jade}88`,
-        boxShadow: `0 0 44px 14px ${jade}33, 0 10px 26px rgba(0,0,0,0.55)`,
-      }}>
-        <Img
-          src={resolveSrc(art)}
-          style={{
-            width: '100%', height: '100%',
-            objectFit: 'cover', objectPosition: '50% 30%',
-          }}
-        />
-      </div>
-    </AbsoluteFill>
-  );
-};
-
 /** Grading de marca: unifica el tono de personaje (calido, rojo/naranja del
  * estilo shonen) + broll (colores random de GIPHY) bajo un mismo aura verde
  * mistica, igual al logo del canal (feedback Franco). mix-blend-mode:'color'
@@ -157,48 +126,6 @@ const BrandGrade: React.FC<{ jade: string; dark: string }> = ({ jade, dark }) =>
           background: `radial-gradient(ellipse at 50% 45%, transparent 38%, ${dark}cc 100%)`,
         }}
       />
-    </AbsoluteFill>
-  );
-};
-
-/** Globo de dialogo real (feedback Franco: no una tarjeta flotante - la cita
- * tiene que salir de la boca del personaje). Vive justo debajo del retrato
- * circular (arriba-derecha), colita apuntando hacia arriba-derecha hacia el
- * personaje. v4 (feedback Franco: quedaba "demasiado lejos del texto que
- * cita" - el centrado vertical + top:-10% lo mandaba casi a mitad de
- * pantalla, ~lejos del circulo que vive en el 9%-39%). Ahora anclado
- * top-aligned justo debajo del circulo (que ahora mide 30% y termina en
- * ~39%), sin el hack de centrado. */
-const AuthorCard: React.FC<{ name?: string; quote?: string; jade: string; cream: string; fadeInFrames: number }> = ({
-  name, quote, jade, cream, fadeInFrames,
-}) => {
-  const frame = useCurrentFrame();
-  if (!name || !quote) return null;
-  const opacity = interpolate(frame, [0, fadeInFrames], [0, 1], { extrapolateRight: 'clamp' });
-  const bubbleBg = 'rgba(6,14,12,0.82)';
-  return (
-    <AbsoluteFill style={{ justifyContent: 'flex-start', alignItems: 'flex-start', padding: '0 40px', top: '30%' }}>
-      <div style={{
-        position: 'relative', maxWidth: 560, opacity, background: bubbleBg,
-        border: `2px solid ${jade}66`, borderRadius: 28, padding: '22px 28px',
-        boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
-      }}>
-        <div style={{
-          fontFamily: outfit, fontSize: 32, fontWeight: 500, fontStyle: 'italic', color: cream,
-          lineHeight: 1.32, marginBottom: 12,
-        }}>
-          "{quote}"
-        </div>
-        <div style={{ fontFamily: outfit, fontSize: 26, fontWeight: 800, color: jade }}>
-          — {name}
-        </div>
-        {/* colita del globo, apunta hacia el personaje arriba-derecha */}
-        <div style={{
-          position: 'absolute', right: -22, top: 46, width: 0, height: 0,
-          borderTop: '16px solid transparent', borderBottom: '4px solid transparent',
-          borderLeft: `26px solid ${bubbleBg}`, transform: 'rotate(-22deg)',
-        }} />
-      </div>
     </AbsoluteFill>
   );
 };
@@ -259,30 +186,7 @@ export const Elenco: React.FC<ElencoProps> = (props) => {
         );
       })}
 
-      {segments.map((seg, i) => {
-        const from = Math.round(seg.start * fps);
-        const to = Math.min(Math.round(seg.end * fps), ctaStart);
-        if (to <= from) return null;
-        const xfade = seg.transitionIn === 'xfade' && i > 0 ? 8 : 0;
-        return (
-          <Sequence key={`veh-${i}`} from={from} durationInFrames={to - from}>
-            <VehicleSegment art={seg.vehiculoArt} xfadeFrames={xfade} jade={tokens.jade} />
-          </Sequence>
-        );
-      })}
-
       <BrandGrade jade={tokens.jade} dark={tokens.dark} />
-
-      {segments.map((seg, i) => {
-        const from = Math.round(seg.start * fps);
-        const to = Math.min(Math.round(seg.end * fps), ctaStart);
-        if (to <= from) return null;
-        return (
-          <Sequence key={`author-${i}`} from={from} durationInFrames={to - from}>
-            <AuthorCard name={seg.vehiculoName} quote={seg.quote} jade={tokens.jade} cream={tokens.cream} fadeInFrames={14} />
-          </Sequence>
-        );
-      })}
 
       {frame < ctaStart && transcript.length > 0 && (
         <CaptionTrack segments={transcript} color={tokens.cream} accent={tokens.jade} />

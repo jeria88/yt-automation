@@ -19,12 +19,10 @@ POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "30"))
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.broll_gif import get_broll_video  # noqa: E402
-from app.vehicle_art import get_or_request_review, get_vehicle_art, slug_for  # noqa: E402
+from app.vehicle_art import get_vehicle_art  # noqa: E402
 from app.thumbnail_gen import generate_thumbnail  # noqa: E402
-from app.telegram_bot import send_photo  # noqa: E402
 
 H = {"Authorization": f"Bearer {API_TOKEN}"}
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID_RPC", "")
 
 
 def _patch(pipeline_id: int, status: str, last_error: str | None = None) -> None:
@@ -118,36 +116,11 @@ def _render(pipeline_id: int, props: dict) -> Path:
     return out_path
 
 
-def _ensure_vehicle_approvals(storyboard: dict) -> bool:
-    """Gate de calidad (feedback Franco): un personaje mal generado, una vez
-    cacheado, se repite en todos los videos que lo usen. True si todos los
-    vehiculos del storyboard ya estan aprobados y listos. Si alguno es
-    nuevo, dispara el pedido de revision por Telegram (una vez) y devuelve
-    False - el caller no debe renderizar todavia."""
-    vehiculos = {seg["vehiculo"] for seg in storyboard["segments"] if seg.get("vehiculo")}
-    all_approved = True
-    for v in vehiculos:
-        art, sheet = get_or_request_review(v)
-        if not art:
-            all_approved = False
-            if sheet and TELEGRAM_CHAT_ID:
-                slug = slug_for(v)
-                send_photo(
-                    TELEGRAM_CHAT_ID, str(sheet),
-                    caption=f"Personaje nuevo: {v}\n¿Aprobamos este estilo para usarlo en los videos?",
-                    buttons=[[("✅ Aprobar", f"vehart:{slug}:approve"), ("🔄 Regenerar", f"vehart:{slug}:regen")]],
-                )
-                print(f"[render_worker] pedido de revision enviado para '{v}'")
-    return all_approved
-
-
 def process_one(pipeline: dict) -> None:
+    # v5 (feedback Franco: el retrato del personaje se saco de Elenco.tsx -
+    # el gate de aprobacion por Telegram ya no tiene proposito, se elimino
+    # junto con el render del arte). Pipeline va directo a render.
     pipeline_id = pipeline["id"]
-    storyboard = json.loads(pipeline["storyboard_json"])
-    if not _ensure_vehicle_approvals(storyboard):
-        _patch(pipeline_id, "awaiting_character_approval")
-        print(f"[render_worker] pipeline {pipeline_id} en espera de aprobacion de personajes")
-        return
 
     print(f"[render_worker] procesando pipeline {pipeline_id}")
     _patch(pipeline_id, "rendering")
