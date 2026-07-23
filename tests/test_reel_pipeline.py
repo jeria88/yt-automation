@@ -185,6 +185,7 @@ def test_process_audio_builds_storyboard_and_notifies(monkeypatch):
 
     sent = []
     monkeypatch.setattr(pipeline_jobs, "send_message", lambda chat_id, text, **kw: sent.append((chat_id, text)))
+    monkeypatch.setattr(pipeline_jobs, "prepare_audio", lambda src, dst: dst)
     monkeypatch.setattr(pipeline_jobs, "build_storyboard", lambda script, audio_path: {
         "segments": [{"index": 0, "start": 0.0, "end": 5.0, "vehiculo": "Carl Jung", "transition_in": "cut"}],
         "audio_duration_seconds": 5.0,
@@ -212,6 +213,7 @@ def test_process_audio_marks_error_on_failure(monkeypatch):
     import app.pipeline_jobs as pipeline_jobs
 
     monkeypatch.setattr(pipeline_jobs, "send_message", lambda *a, **kw: None)
+    monkeypatch.setattr(pipeline_jobs, "prepare_audio", lambda src, dst: dst)
 
     def boom(script, audio_path):
         raise RuntimeError("whisper reventó")

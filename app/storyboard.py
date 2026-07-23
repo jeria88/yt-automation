@@ -51,8 +51,15 @@ def _get_model():
 
 
 def transcribe(audio_path: str) -> list[dict]:
-    segments, _ = _get_model().transcribe(audio_path, word_timestamps=False, language="es")
-    return [{"start": s.start, "end": s.end, "text": s.text.strip()} for s in segments]
+    """Con word_timestamps=True: cada segmento trae tambien sus palabras con
+    start/end reales, para subtitulos karaoke (feedback Franco: sin esto el
+    video se siente sin ritmo, nada llama la atencion cada pocos segundos)."""
+    segments, _ = _get_model().transcribe(audio_path, word_timestamps=True, language="es")
+    out = []
+    for s in segments:
+        words = [{"word": w.word.strip(), "start": w.start, "end": w.end} for w in (s.words or [])]
+        out.append({"start": s.start, "end": s.end, "text": s.text.strip(), "words": words})
+    return out
 
 
 def build_storyboard(script: str, audio_path: str) -> dict:
@@ -60,4 +67,5 @@ def build_storyboard(script: str, audio_path: str) -> dict:
     seg_text = "\n".join(f"{s['start']:.1f}-{s['end']:.1f}: {s['text']}" for s in segments)
     storyboard = ask_json(PROMPT.format(script=script, segments=seg_text))
     storyboard["audio_duration_seconds"] = segments[-1]["end"] if segments else 0.0
+    storyboard["transcript"] = segments
     return storyboard

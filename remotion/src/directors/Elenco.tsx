@@ -2,11 +2,18 @@
  * DE UN vehiculo/personaje real narrando, sincronizado al audio real de Franco
  * (no a la formula de palabras/segundo que usan el resto de directores de
  * content-studio). Cada segmento del storyboard (Fase 3) trae su propio
- * vehiculo con crossfade o corte entre ellos. */
+ * vehiculo con crossfade o corte entre ellos.
+ *
+ * v2 (feedback Franco tras ver los primeros 2 publicados): fondo liso sin
+ * vida, sin subtitulos, sin nada que sostenga la atencion cada pocos
+ * segundos. Se agrega: fondo con movimiento propio (gradiente que respira),
+ * subtitulos karaoke con timestamps reales de whisper, y un flash/pulso en
+ * cada corte de segmento del transcript (no arbitrario - sigue el ritmo real
+ * del habla, no un timer fijo). */
 import React from 'react';
 import { AbsoluteFill, Audio, Img, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import { loadFont as loadGrotesk } from '@remotion/google-fonts/SpaceGrotesk';
-import { fadeWindow } from '../effects';
+import { fadeWindow, flash } from '../effects';
 import { KineticPhrase } from '../kinetic';
 
 const { fontFamily: grotesk } = loadGrotesk();
@@ -18,6 +25,9 @@ export type ElencoSegment = {
   transitionIn: 'cut' | 'xfade';
 };
 
+export type TranscriptWord = { word: string; start: number; end: number };
+export type TranscriptSegment = { start: number; end: number; text: string; words: TranscriptWord[] };
+
 export type ElencoProps = {
   texts: { hook: string; cta: string };
   tokens: { jade: string; cream: string; dark: string };
@@ -25,6 +35,7 @@ export type ElencoProps = {
   narrationAudio: string;
   segments: ElencoSegment[];
   durationSeconds: number;
+  transcript?: TranscriptSegment[];
 };
 
 export const resolveSrc = (src: string) => (src.startsWith('http') ? src : staticFile(src));
@@ -50,6 +61,26 @@ const TextBlock: React.FC<{ children: React.ReactNode; size: number; y: number; 
     </div>
   </AbsoluteFill>
 );
+
+/** Fondo con vida propia: gradiente radial que se desplaza lento (seno/coseno,
+ * ciclos 28-45s, nunca ligado a scroll) entre el color base y un tinte jade
+ * sutil - reemplaza el backgroundColor plano que se sentia "muerto". */
+const AnimatedBackground: React.FC<{ tokens: ElencoProps['tokens'] }> = ({ tokens }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const t = frame / fps;
+  const px = 50 + Math.sin((t / 28) * 2 * Math.PI) * 18;
+  const py = 45 + Math.cos((t / 37) * 2 * Math.PI) * 22;
+  const glow = 0.10 + 0.05 * (1 + Math.sin((t / 19) * 2 * Math.PI)) / 2;
+  return (
+    <AbsoluteFill
+      style={{
+        backgroundColor: tokens.dark,
+        backgroundImage: `radial-gradient(circle at ${px}% ${py}%, ${tokens.jade}${Math.round(glow * 255).toString(16).padStart(2, '0')} 0%, ${tokens.dark} 60%)`,
+      }}
+    />
+  );
+};
 
 /** Capa de personaje: bottom-anchored, drift lento seno/coseno (nunca ligado a
  * scroll, ciclos 25-40s). Crossfade entre segmentos si transitionIn='xfade'. */
@@ -80,8 +111,31 @@ const VehicleSegment: React.FC<{ art?: string; tokens: ElencoProps['tokens']; xf
   );
 };
 
+/** Subtitulos karaoke: timestamps REALES de whisper (Fase 3), no stagger
+ * sintetico - la palabra activa se resalta segun su word.start/end real. */
+const CaptionTrack: React.FC<{ segments: TranscriptSegment[]; color: string; accent: string }> = ({
+  segments, color, accent,
+}) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const t = frame / fps;
+  const seg = segments.find((s) => t >= s.start && t < s.end);
+  if (!seg || !seg.words || seg.words.length === 0) return null;
+  return (
+    <TextBlock size={58} y={0.84}>
+      <span>
+        {seg.words.map((w, i) => (
+          <span key={i} style={{ color: t >= w.start ? accent : color, opacity: t >= w.start ? 1 : 0.55 }}>
+            {w.word}{i < seg.words.length - 1 ? ' ' : ''}
+          </span>
+        ))}
+      </span>
+    </TextBlock>
+  );
+};
+
 export const Elenco: React.FC<ElencoProps> = (props) => {
-  const { texts, tokens, domain, narrationAudio, segments, durationSeconds } = props;
+  const { texts, tokens, domain, narrationAudio, segments, transcript = [] } = props;
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   const ctaSeconds = 3;
@@ -91,6 +145,7 @@ export const Elenco: React.FC<ElencoProps> = (props) => {
   return (
     <AbsoluteFill style={{ backgroundColor: tokens.dark }}>
       <Audio src={resolveSrc(narrationAudio)} />
+      <AnimatedBackground tokens={tokens} />
 
       {segments.map((seg, i) => {
         const from = Math.round(seg.start * fps);
@@ -103,6 +158,20 @@ export const Elenco: React.FC<ElencoProps> = (props) => {
           </Sequence>
         );
       })}
+
+      {/* Flash sutil en cada corte de frase real del audio - sostiene la
+          atencion cada pocos segundos siguiendo el ritmo del habla, no un
+          timer arbitrario. */}
+      {transcript.slice(1).map((seg, i) => {
+        const at = Math.round(seg.start * fps);
+        if (at >= ctaStart) return null;
+        const op = flash(frame, at, 0.22, 5);
+        return op > 0.01 ? <AbsoluteFill key={i} style={{ backgroundColor: '#fff', opacity: op }} /> : null;
+      })}
+
+      {frame < ctaStart && transcript.length > 0 && (
+        <CaptionTrack segments={transcript} color={tokens.cream} accent={tokens.jade} />
+      )}
 
       {frame < hookEnd && texts.hook && (
         <TextBlock size={72} y={0.16} opacity={fadeWindow(frame, 0, hookEnd, 1, 8)}>

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from app.audio_prep import prepare_audio
 from app.db import SessionLocal, ReelPipeline
 from app.hook_regen import regenerate_and_update
 from app.metadata_gen import generate_metadata
@@ -37,7 +38,16 @@ def process_audio(pipeline_id: int) -> None:
         s.commit()
 
     try:
-        storyboard = build_storyboard(script, audio_path)
+        # feedback Franco: lee muy lento/academico, con silencios largos.
+        # Se acelera y se cortan silencios ANTES de transcribir, asi los
+        # timestamps del storyboard/subtitulos ya calzan con el audio final.
+        prepped_path = str(Path(audio_path).with_suffix("")) + "_prepped.ogg"
+        prepare_audio(audio_path, prepped_path)
+        with SessionLocal() as s:
+            r = s.get(ReelPipeline, pipeline_id)
+            r.audio_file_path = prepped_path
+            s.commit()
+        storyboard = build_storyboard(script, prepped_path)
     except Exception as e:
         logger.exception("Fallo armando storyboard para pipeline %s", pipeline_id)
         with SessionLocal() as s:

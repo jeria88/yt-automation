@@ -86,6 +86,7 @@ def _build_props(pipeline: dict, audio_filename: str) -> dict:
         "narrationAudio": audio_filename,
         "durationSeconds": storyboard["audio_duration_seconds"],
         "segments": segments,
+        "transcript": storyboard.get("transcript", []),
     }
 
 
