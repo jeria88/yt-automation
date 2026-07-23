@@ -75,7 +75,7 @@ const BrollBackground: React.FC<{ gif?: string; dark: string }> = ({ gif, dark }
   return (
     <AbsoluteFill style={{ backgroundColor: dark }}>
       <Gif src={resolveSrc(gif)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} loopBehavior="loop" />
-      <AbsoluteFill style={{ backgroundColor: dark, opacity: 0.5 }} />
+      <AbsoluteFill style={{ backgroundColor: dark, opacity: 0.72 }} />
     </AbsoluteFill>
   );
 };
