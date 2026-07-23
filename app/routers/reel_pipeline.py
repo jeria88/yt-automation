@@ -31,6 +31,8 @@ class ReelPipelineIn(BaseModel):
 class ReelPipelinePatch(BaseModel):
     status: str
     last_error: Optional[str] = None
+    youtube_video_id: Optional[str] = None
+    youtube_url: Optional[str] = None
 
     @field_validator("status")
     @classmethod
@@ -82,6 +84,10 @@ def update_status(pipeline_id: int, payload: ReelPipelinePatch):
         r.status = payload.status
         if payload.last_error is not None:
             r.last_error = payload.last_error
+        if payload.youtube_video_id is not None:
+            r.youtube_video_id = payload.youtube_video_id
+        if payload.youtube_url is not None:
+            r.youtube_url = payload.youtube_url
         s.commit()
         s.refresh(r)
         return _serialize(r)
