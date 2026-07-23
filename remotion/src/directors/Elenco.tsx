@@ -110,6 +110,30 @@ const VehicleSegment: React.FC<{ art?: string; xfadeFrames: number }> = ({ art, 
   );
 };
 
+/** Grading de marca: unifica el tono de personaje (calido, rojo/naranja del
+ * estilo shonen) + broll (colores random de GIPHY) bajo un mismo aura verde
+ * mistica, igual al logo del canal (feedback Franco). mix-blend-mode:'color'
+ * tine todo lo de abajo preservando el detalle de luminosidad - no tapa la
+ * imagen, la "unifica". + vinieta oscura en los bordes (mistico/cinematico)
+ * + pulso lento de intensidad del aura (seno, ciclo 32s, nunca ligado a
+ * scroll, ver regla de motion del proyecto). */
+const BrandGrade: React.FC<{ jade: string; dark: string }> = ({ jade, dark }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const t = frame / fps;
+  const pulse = 0.34 + 0.08 * (1 + Math.sin((t / 32) * 2 * Math.PI)) / 2;
+  return (
+    <AbsoluteFill style={{ pointerEvents: 'none' }}>
+      <AbsoluteFill style={{ backgroundColor: jade, opacity: pulse, mixBlendMode: 'color' }} />
+      <AbsoluteFill
+        style={{
+          background: `radial-gradient(ellipse at 50% 45%, transparent 38%, ${dark}cc 100%)`,
+        }}
+      />
+    </AbsoluteFill>
+  );
+};
+
 /** Card de apoyo: nombre del autor/personaje + una cita suya relacionada al
  * tema del beat (feedback Franco). Vive a la izquierda, en el tercio medio -
  * no compite con el personaje (arriba-derecha) ni con los subtitulos (abajo). */
@@ -195,6 +219,8 @@ export const Elenco: React.FC<ElencoProps> = (props) => {
           </Sequence>
         );
       })}
+
+      <BrandGrade jade={tokens.jade} dark={tokens.dark} />
 
       {segments.map((seg, i) => {
         const from = Math.round(seg.start * fps);
