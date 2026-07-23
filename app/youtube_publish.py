@@ -1,7 +1,11 @@
 """Publicacion en YouTube - resumable upload con titulo/descripcion/miniatura.
 Adaptado de content-studio/agents/youtube_publish.py, credenciales propias
 (ensure_fresh_access_token) en vez de las del tenant."""
+import logging
+
 from app.youtube_oauth import ensure_fresh_access_token
+
+logger = logging.getLogger(__name__)
 
 
 def publish(video_path: str, title: str, description: str, thumbnail_path: str | None = None,
@@ -28,7 +32,13 @@ def publish(video_path: str, title: str, description: str, thumbnail_path: str |
         _, response = request.next_chunk()
     video_id = response["id"]
 
+    # El video YA esta subido en este punto - un fallo de miniatura (ej. canal
+    # sin verificar telefono, YouTube exige eso para thumbnails custom) NO debe
+    # tirar todo el publish para atras. Se degrada a la miniatura auto-generada.
     if thumbnail_path:
-        youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(thumbnail_path)).execute()
+        try:
+            youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(thumbnail_path)).execute()
+        except Exception as e:
+            logger.warning("No se pudo subir la miniatura de %s (video ya publicado igual): %s", video_id, e)
 
     return {"video_id": video_id, "url": f"https://www.youtube.com/watch?v={video_id}"}
