@@ -18,6 +18,7 @@ PUBLIC_DIR = REMOTION_DIR / "public"
 POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "30"))
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app.broll_gif import get_broll_gif  # noqa: E402
 from app.vehicle_art import get_vehicle_art  # noqa: E402
 from app.thumbnail_gen import generate_thumbnail  # noqa: E402
 
@@ -71,9 +72,17 @@ def _build_props(pipeline: dict, audio_filename: str) -> dict:
         if paths:
             art_filename = f"seg{i}.png"
             (PUBLIC_DIR / art_filename).write_bytes(Path(paths[0]).read_bytes())
+
+        gif_filename = None
+        gif_path = get_broll_gif(seg.get("broll_keyword", ""))
+        if gif_path:
+            gif_filename = f"broll{i}.gif"
+            (PUBLIC_DIR / gif_filename).write_bytes(gif_path.read_bytes())
+
         segments.append({
             "start": seg["start"], "end": seg["end"],
-            "vehiculoArt": art_filename, "transitionIn": seg.get("transition_in", "cut"),
+            "vehiculoArt": art_filename, "brollGif": gif_filename,
+            "transitionIn": seg.get("transition_in", "cut"),
         })
 
     hook = _extract_hook(pipeline.get("script_text") or "")

@@ -29,10 +29,15 @@ Guion completo:
 Segmentos con timestamps (inicio-fin en segundos, texto):
 {segments}
 
+Ademas, para cada beat asigna un "broll_keyword": 1-3 palabras EN INGLES que
+describan el tema/mood visual de ese beat para buscar un GIF de fondo (ej.
+"ocean waves", "cosmic space", "deep breathing", "mirror reflection") - nunca
+el nombre del vehiculo, es sobre el TEMA que se esta narrando en ese momento.
+
 Devolveme SOLO un JSON con esta forma exacta, sin texto extra:
 {{
   "segments": [
-    {{"index": 0, "start": 0.0, "end": 12.3, "vehiculo": "Nombre Real Y Apellido", "transition_in": "cut"}},
+    {{"index": 0, "start": 0.0, "end": 12.3, "vehiculo": "Nombre Real Y Apellido", "broll_keyword": "ocean waves", "transition_in": "cut"}},
     ...
   ]
 }}
