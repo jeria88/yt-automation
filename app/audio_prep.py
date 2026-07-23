@@ -4,7 +4,10 @@ ffmpeg, sin servicios pagos."""
 import subprocess
 
 SILENCE_FILTER = "silenceremove=stop_periods=-1:stop_duration=0.6:stop_threshold=-35dB"
-SPEED_FACTOR = 1.3  # ritmo mas natural para faceless de retencion, pitch-preservado
+# feedback Franco: 1.3 quedo dificil de entender ("demasiado acelerado").
+# 1.12 es un empujon mas sutil - corrige el ritmo academico sin sacrificar
+# inteligibilidad.
+SPEED_FACTOR = 1.12
 
 
 def prepare_audio(src_path: str, dst_path: str, speed: float = SPEED_FACTOR) -> str:

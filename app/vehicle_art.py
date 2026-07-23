@@ -28,10 +28,17 @@ POLLINATIONS_URL = "https://image.pollinations.ai/prompt/{prompt}"
 # nombres muy asociados a una estatua/pintura especifica (ej. "Marcus
 # Aurelius") pueden pisar el prompt de estilo si no se insiste (probado:
 # seed 0 devolvio una estatua de bronce en vez de anime, seed 1 SI dio anime).
+# feedback Franco: "dynamic dramatic pose" salia agresivo/de pelea - el
+# personaje tiene que narrar, no combatir. Shonen narrativo: expresion calida,
+# boca entreabierta como hablando, elemento distintivo propio del personaje
+# (objeto/simbolo asociado) en vez de solo pose+aura generica.
 SHONEN_STYLE_PREFIX = (
     "shonen anime manga illustration, digital anime art, NOT a photo, NOT a statue, "
-    "NOT photorealistic, One Piece Shonen Jump style, vibrant colors, dynamic dramatic pose, "
-    "glowing aura effect, dramatic lighting, high detail anime portrait of "
+    "NOT photorealistic, One Piece Shonen Jump narrator style, warm calm expression, "
+    "mouth slightly open as if speaking to the viewer, storytelling pose, NOT a battle "
+    "pose, NOT aggressive, include one distinctive object or symbol associated with the "
+    "character, vibrant colors, soft glowing aura, dramatic lighting, high detail anime "
+    "portrait of "
 )
 
 # feedback Franco: el txt2img puro (prompt solo con el nombre) ignoraba la
@@ -107,6 +114,9 @@ def _slug(name: str) -> str:
     s = unicodedata.normalize("NFD", name.lower())
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
     return re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+
+
+slug_for = _slug  # alias publico, usado por render_worker/telegram_webhook
 
 
 def _load_manifest(root: Path) -> dict:
@@ -197,27 +207,19 @@ def _cutout(src: Path, dst: Path) -> bool:
         return False
 
 
-def get_vehicle_art(vehiculo: str, n: int = 2) -> list[Path]:
-    """n cutouts PNG del vehiculo, mejores primero. Cache primero, fetch
-    on-demand si hace falta. [] si no se consigue nada usable (el caller
-    degrada: sin capa de personaje para ese segmento)."""
-    if not vehiculo:
-        return []
+def _generate_and_cutout(vehiculo: str, root: Path) -> list[Path]:
+    """Genera N_FETCH candidatos + rembg cutout, guarda en vehiculos/<slug>/.
+    No toca el estado de aprobacion - eso lo maneja el caller."""
     slug = _slug(vehiculo)
-    root = VEHICLE_ROOT
-
-    cached = _pick_from_cache(root, slug, n)
-    if len(cached) >= n:
-        return cached
-
     folder = root / slug
     tmp = folder / "_tmp"
     candidates = _fetch_candidates(vehiculo, tmp, N_FETCH, root)
     if not candidates:
-        return cached
+        return []
 
     manifest = _load_manifest(root)
     clips = manifest.setdefault("clips", [])
+    kept: list[Path] = []
     for i, src in enumerate(candidates):
         dst = folder / f"{slug}-{i:02d}.png"
         if not _cutout(src, dst):
@@ -228,6 +230,7 @@ def get_vehicle_art(vehiculo: str, n: int = 2) -> list[Path]:
         rel = f"{slug}/{dst.name}"
         clips[:] = [c for c in clips if c.get("file") != rel]
         clips.append({"file": rel, "vehiculo": slug, "score": 50})
+        kept.append(dst)
 
     for f in tmp.glob("*"):
         f.unlink(missing_ok=True)
@@ -235,4 +238,102 @@ def get_vehicle_art(vehiculo: str, n: int = 2) -> list[Path]:
         tmp.rmdir()
 
     _save_manifest(root, manifest)
+    return kept
+
+
+def _contact_sheet(paths: list[Path], dst: Path) -> Path | None:
+    """Junta los cutouts lado a lado sobre fondo oscuro (fondo original es
+    transparente, invisible en un jpg blanco) para mandar por Telegram como
+    una sola foto de revision."""
+    from PIL import Image
+    imgs = []
+    for p in paths:
+        try:
+            imgs.append(Image.open(p).convert("RGBA"))
+        except Exception:
+            continue
+    if not imgs:
+        return None
+    h = 512
+    resized = [im.resize((int(im.width * h / im.height), h)) for im in imgs]
+    total_w = sum(im.width for im in resized) + 20 * (len(resized) - 1)
+    sheet = Image.new("RGB", (total_w, h), (10, 16, 14))
+    x = 0
+    for im in resized:
+        sheet.paste(im, (x, 0), im)
+        x += im.width + 20
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(dst, "JPEG", quality=90)
+    return dst
+
+
+def get_vehicle_art(vehiculo: str, n: int = 2) -> list[Path]:
+    """SOLO devuelve arte ya aprobado por Franco (gate de calidad via
+    Telegram - feedback: un personaje mal generado, una vez cacheado, se
+    repite en todos los videos futuros que lo usen). Si el vehiculo es
+    nuevo o esta pendiente de revision, devuelve [] - usar
+    get_or_request_review() para disparar/consultar el pedido."""
+    if not vehiculo:
+        return []
+    slug = _slug(vehiculo)
+    root = VEHICLE_ROOT
+    manifest = _load_manifest(root)
+    if manifest.get("approvals", {}).get(slug, {}).get("status") != "approved":
+        return []
     return _pick_from_cache(root, slug, n)
+
+
+def get_or_request_review(vehiculo: str) -> tuple[list[Path], Path | None]:
+    """Punto de entrada del render_worker antes de renderizar un segmento.
+    Devuelve (arte_aprobado, None) si ya esta listo para usar. Si no,
+    devuelve ([], hoja_de_contacto) la PRIMERA vez que se pide (recien
+    generada, el caller debe mandarla a revision por Telegram); en pedidos
+    pendientes posteriores devuelve ([], None) - no reenvia denuevo."""
+    if not vehiculo:
+        return [], None
+    slug = _slug(vehiculo)
+    root = VEHICLE_ROOT
+    manifest = _load_manifest(root)
+    approvals = manifest.setdefault("approvals", {})
+    entry = approvals.get(slug)
+
+    if entry and entry.get("status") == "approved":
+        return _pick_from_cache(root, slug, 2), None
+    if entry and entry.get("status") == "pending":
+        return [], None
+
+    candidates = _generate_and_cutout(vehiculo, root)
+    if not candidates:
+        return [], None
+    sheet = _contact_sheet(candidates, root / slug / "review_sheet.jpg")
+    if not sheet:
+        return [], None
+    approvals[slug] = {"status": "pending", "name": vehiculo}
+    _save_manifest(root, manifest)
+    return [], sheet
+
+
+def approve_vehicle(slug: str) -> None:
+    root = VEHICLE_ROOT
+    manifest = _load_manifest(root)
+    approvals = manifest.setdefault("approvals", {})
+    if slug in approvals:
+        approvals[slug]["status"] = "approved"
+        _save_manifest(root, manifest)
+
+
+def reject_vehicle(slug: str) -> str | None:
+    """Borra candidatos actuales y el estado pending - la proxima
+    get_or_request_review() genera de cero. Devuelve el nombre del
+    vehiculo (para regenerar en el momento) o None si no habia pedido."""
+    root = VEHICLE_ROOT
+    manifest = _load_manifest(root)
+    approvals = manifest.setdefault("approvals", {})
+    entry = approvals.pop(slug, None)
+    folder = root / slug
+    for f in folder.glob("*.png"):
+        f.unlink(missing_ok=True)
+    (folder / "review_sheet.jpg").unlink(missing_ok=True)
+    manifest["clips"] = [c for c in manifest.get("clips", []) if c.get("vehiculo") != slug]
+    _save_manifest(root, manifest)
+    return entry.get("name") if entry else None

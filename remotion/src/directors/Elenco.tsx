@@ -80,32 +80,38 @@ const BrollBackground: React.FC<{ gif?: string; dark: string }> = ({ gif, dark }
   );
 };
 
-/** Capa de personaje: mas chico y arriba del area de subtitulos (antes 88%
- * bottom-anchored competia directo con el caption de abajo y quedaba tapado
- * por su scrim). Drift lento seno/coseno (nunca ligado a scroll, ciclos
- * 25-40s). Crossfade entre segmentos si transitionIn='xfade'. */
-const VehicleSegment: React.FC<{ art?: string; xfadeFrames: number }> = ({ art, xfadeFrames }) => {
+/** Retrato circular chico (feedback Franco: la imagen rectangular se comia
+ * la pantalla y se veia "pegada" sin integrar al fondo). Marco circular
+ * 24% de ancho maximo + halo jade que la integra al GIF de fondo, en vez
+ * del cutout rectangular grande de antes. Drift lento seno/coseno (nunca
+ * ligado a scroll). Crossfade entre segmentos si transitionIn='xfade'. */
+const VehicleSegment: React.FC<{ art?: string; xfadeFrames: number; jade: string }> = ({ art, xfadeFrames, jade }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   if (!art) return null;
   const t = frame / fps;
-  const dx = Math.sin((t / 30) * 2 * Math.PI) * 18;
-  const dy = Math.cos((t / 37) * 2 * Math.PI) * 12;
-  const sc = 1 + Math.sin((t / 41) * 2 * Math.PI) * 0.03;
+  const dx = Math.sin((t / 30) * 2 * Math.PI) * 8;
+  const dy = Math.cos((t / 37) * 2 * Math.PI) * 6;
   const opacity = xfadeFrames > 0
     ? interpolate(frame, [0, xfadeFrames], [0, 1], { extrapolateRight: 'clamp' })
     : 1;
   return (
     <AbsoluteFill style={{ pointerEvents: 'none' }}>
-      <Img
-        src={resolveSrc(art)}
-        style={{
-          position: 'absolute', top: '8%', right: '2%', height: '52%', maxWidth: '80%',
-          objectFit: 'contain', objectPosition: 'top right', opacity,
-          transform: `translate(${dx}px, ${dy}px) scale(${sc})`,
-          filter: 'drop-shadow(0 12px 28px rgba(0,0,0,0.55))',
-        }}
-      />
+      <div style={{
+        position: 'absolute', top: '9%', right: '7%', width: '24%', aspectRatio: '1 / 1',
+        borderRadius: '50%', overflow: 'hidden', opacity,
+        transform: `translate(${dx}px, ${dy}px)`,
+        border: `3px solid ${jade}88`,
+        boxShadow: `0 0 44px 14px ${jade}33, 0 10px 26px rgba(0,0,0,0.55)`,
+      }}>
+        <Img
+          src={resolveSrc(art)}
+          style={{
+            position: 'absolute', left: '-25%', top: '-12%', width: '150%', height: '150%',
+            objectFit: 'cover', objectPosition: '50% 18%',
+          }}
+        />
+      </div>
     </AbsoluteFill>
   );
 };
@@ -134,12 +140,9 @@ const BrandGrade: React.FC<{ jade: string; dark: string }> = ({ jade, dark }) =>
   );
 };
 
-/** Card de apoyo: nombre del autor/personaje + una cita suya relacionada al
- * tema del beat (feedback Franco). Vive a la izquierda, en el tercio medio -
- * no compite con el personaje (arriba-derecha) ni con los subtitulos (abajo). */
 /** Globo de dialogo real (feedback Franco: no una tarjeta flotante - la cita
- * tiene que salir de la boca del personaje). Colita apuntando hacia arriba-
- * derecha, donde vive VehicleSegment (top:8%, right:2%). */
+ * tiene que salir de la boca del personaje). Vive a la izquierda, en el
+ * tercio medio, colita apuntando hacia el retrato circular arriba-derecha. */
 const AuthorCard: React.FC<{ name?: string; quote?: string; jade: string; cream: string; fadeInFrames: number }> = ({
   name, quote, jade, cream, fadeInFrames,
 }) => {
@@ -176,6 +179,11 @@ const AuthorCard: React.FC<{ name?: string; quote?: string; jade: string; cream:
 
 /** Subtitulos karaoke: timestamps REALES de whisper (Fase 3), no stagger
  * sintetico - la palabra activa se resalta segun su word.start/end real. */
+// feedback Franco: mostrar el parrafo whisper entero era demasiado texto en
+// pantalla, confundia. Se corta en frases chicas (CAPTION_CHUNK palabras) y
+// solo se muestra la que esta sonando ahora.
+const CAPTION_CHUNK = 5;
+
 const CaptionTrack: React.FC<{ segments: TranscriptSegment[]; color: string; accent: string }> = ({
   segments, color, accent,
 }) => {
@@ -184,12 +192,17 @@ const CaptionTrack: React.FC<{ segments: TranscriptSegment[]; color: string; acc
   const t = frame / fps;
   const seg = segments.find((s) => t >= s.start && t < s.end);
   if (!seg || !seg.words || seg.words.length === 0) return null;
+
+  const chunks: TranscriptWord[][] = [];
+  for (let i = 0; i < seg.words.length; i += CAPTION_CHUNK) chunks.push(seg.words.slice(i, i + CAPTION_CHUNK));
+  const active = chunks.find((c) => t >= c[0].start && t < c[c.length - 1].end + 0.4) ?? chunks[chunks.length - 1];
+
   return (
     <TextBlock size={54} y={0.87} scrimSpread={14}>
       <span>
-        {seg.words.map((w, i) => (
+        {active.map((w, i) => (
           <span key={i} style={{ color: t >= w.start ? accent : color, opacity: t >= w.start ? 1 : 0.55 }}>
-            {w.word}{i < seg.words.length - 1 ? ' ' : ''}
+            {w.word}{i < active.length - 1 ? ' ' : ''}
           </span>
         ))}
       </span>
@@ -227,7 +240,7 @@ export const Elenco: React.FC<ElencoProps> = (props) => {
         const xfade = seg.transitionIn === 'xfade' && i > 0 ? 8 : 0;
         return (
           <Sequence key={`veh-${i}`} from={from} durationInFrames={to - from}>
-            <VehicleSegment art={seg.vehiculoArt} xfadeFrames={xfade} />
+            <VehicleSegment art={seg.vehiculoArt} xfadeFrames={xfade} jade={tokens.jade} />
           </Sequence>
         );
       })}

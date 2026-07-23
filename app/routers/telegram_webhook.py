@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from pathlib import Path
@@ -8,7 +9,8 @@ from sqlalchemy import select
 from app.backlog import fill_backlog, regenerate_script
 from app.db import SessionLocal, ReelPipeline
 from app.pipeline_jobs import process_audio
-from app.telegram_bot import answer_callback_query, download_voice, send_message
+from app.telegram_bot import answer_callback_query, download_voice, send_message, send_photo
+from app.vehicle_art import approve_vehicle, get_or_request_review, get_vehicle_art, reject_vehicle, slug_for
 
 router = APIRouter(prefix="/telegram")
 
@@ -37,6 +39,48 @@ def _handle_callback(cbq: dict) -> None:
     elif data.startswith("cut:"):
         pipeline_id = int(data.split(":", 1)[1])
         _cut_pipeline(pipeline_id)
+    elif data.startswith("vehart:"):
+        _, slug, action = data.split(":", 2)
+        _handle_vehicle_review(slug, action)
+
+
+def _handle_vehicle_review(slug: str, action: str) -> None:
+    """Gate de aprobacion de personajes (feedback Franco: un personaje mal
+    generado, una vez cacheado, se repite en todos los videos que lo usen)."""
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID_RPC", "")
+    if action == "approve":
+        approve_vehicle(slug)
+        _release_pipelines_waiting_on(slug)
+        if chat_id:
+            send_message(chat_id, f"✅ Personaje aprobado ({slug}), se libera el render de los guiones que lo esperaban.")
+    elif action == "regen":
+        name = reject_vehicle(slug)
+        if name:
+            _, sheet = get_or_request_review(name)
+            if sheet and chat_id:
+                send_photo(
+                    chat_id, str(sheet),
+                    caption=f"Nueva version: {name}\n¿Aprobamos este estilo?",
+                    buttons=[[("✅ Aprobar", f"vehart:{slug}:approve"), ("🔄 Regenerar", f"vehart:{slug}:regen")]],
+                )
+
+
+def _release_pipelines_waiting_on(slug: str) -> None:
+    """Vuelve a storyboard_ready los pipelines frenados por este personaje,
+    solo si YA tienen TODOS sus vehiculos aprobados (pueden depender de mas
+    de uno)."""
+    with SessionLocal() as s:
+        pending = s.scalars(
+            select(ReelPipeline).where(ReelPipeline.status == "awaiting_character_approval")
+        ).all()
+        for r in pending:
+            storyboard = json.loads(r.storyboard_json or "{}")
+            vehiculos = {seg.get("vehiculo") for seg in storyboard.get("segments", []) if seg.get("vehiculo")}
+            if slug not in {slug_for(v) for v in vehiculos}:
+                continue
+            if vehiculos and all(get_vehicle_art(v) for v in vehiculos):
+                r.status = "storyboard_ready"
+        s.commit()
 
 
 def _cut_pipeline(pipeline_id: int) -> None:

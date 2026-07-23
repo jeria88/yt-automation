@@ -17,8 +17,9 @@ RENDER_DIR.mkdir(parents=True, exist_ok=True)
 
 STATUSES = [
     "topic_pending", "script_pending", "script_sent", "awaiting_audio", "audio_received",
-    "storyboard_pending", "storyboard_ready", "rendering", "render_ready",
-    "publishing", "published", "monitoring", "regenerating_hook", "republishing", "error",
+    "storyboard_pending", "storyboard_ready", "awaiting_character_approval", "rendering",
+    "render_ready", "publishing", "published", "monitoring", "regenerating_hook",
+    "republishing", "error",
 ]
 
 

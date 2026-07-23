@@ -1,4 +1,5 @@
 """Bot de Telegram bidireccional, dedicado a yt-automation (NO reusa el bot de Hermes)."""
+import json
 import os
 
 import httpx
@@ -24,6 +25,21 @@ def send_message(chat_id: str, text: str, buttons: list[list[tuple[str, str]]] |
             ]
         }
     resp = httpx.post(_url("sendMessage"), json=payload, timeout=30)
+    resp.raise_for_status()
+    return resp.json()["result"]
+
+
+def send_photo(chat_id: str, photo_path: str, caption: str = "", buttons: list[list[tuple[str, str]]] | None = None) -> dict:
+    """Foto + botones inline (gate de revision de personajes)."""
+    data = {"chat_id": chat_id, "caption": caption}
+    if buttons:
+        data["reply_markup"] = json.dumps({
+            "inline_keyboard": [
+                [{"text": t, "callback_data": cb} for t, cb in row] for row in buttons
+            ]
+        })
+    with open(photo_path, "rb") as f:
+        resp = httpx.post(_url("sendPhoto"), data=data, files={"photo": f}, timeout=60)
     resp.raise_for_status()
     return resp.json()["result"]
 
