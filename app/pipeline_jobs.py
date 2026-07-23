@@ -41,8 +41,18 @@ def process_audio(pipeline_id: int) -> None:
         # feedback Franco: lee muy lento/academico, con silencios largos.
         # Se acelera y se cortan silencios ANTES de transcribir, asi los
         # timestamps del storyboard/subtitulos ya calzan con el audio final.
-        prepped_path = str(Path(audio_path).with_suffix("")) + "_prepped.ogg"
-        prepare_audio(audio_path, prepped_path)
+        #
+        # BUG encontrado (audio "inentendible"): audio_file_path se
+        # reescribe al path prepped despues del primer run, asi que un
+        # retry-storyboard tomaba el audio YA acelerado y lo volvia a
+        # acelerar - compuesto en 3 retries daba ~1.3^3 = 2.2x real (se vio
+        # en produccion: "2_prepped_prepped_prepped.ogg"). Fix: siempre
+        # partir del audio ORIGINAL ({pipeline_id}.ogg, nunca reescrito) y
+        # escribir siempre al mismo nombre prepped (sobreescribe, no acumula).
+        audio_dir = Path(audio_path).parent
+        raw_path = audio_dir / f"{pipeline_id}.ogg"
+        prepped_path = str(audio_dir / f"{pipeline_id}_prepped.ogg")
+        prepare_audio(str(raw_path), prepped_path)
         with SessionLocal() as s:
             r = s.get(ReelPipeline, pipeline_id)
             r.audio_file_path = prepped_path
